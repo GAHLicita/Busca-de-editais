@@ -1,0 +1,7 @@
+# TERMOS DE EXCLUSÃO - se o objeto contiver algum destes termos, o edital
+# é descartado (mesmo que tenha um termo principal/geral).
+# Use para eliminar falsos positivos recorrentes. Um termo por linha.
+lente zoom
+objetiva zoom
+zoom optico
+zoom otico

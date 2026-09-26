@@ -1,0 +1,13 @@
+{
+  "modalidades": {
+    "4": "Concorrência - Eletrônica",
+    "5": "Concorrência - Presencial",
+    "6": "Pregão - Eletrônico",
+    "7": "Pregão - Presencial",
+    "8": "Dispensa",
+    "9": "Inexigibilidade",
+    "12": "Credenciamento"
+  },
+  "dias_retroativos": 2,
+  "incluir_prioridade_media": true
+}

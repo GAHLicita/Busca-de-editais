@@ -1,0 +1,43 @@
+# TERMOS GERAIS - descrevem o tipo de contratação em que a empresa atua.
+# Editais com estes termos entram no relatório com prioridade MÉDIA
+# (vale conferir o objeto). Um termo por linha. Linhas com # são ignoradas.
+inteligencia artificial
+ia generativa
+ferramenta de ia
+ferramentas de ia
+plataforma de ia
+assistente virtual inteligente
+modelo de linguagem
+large language model
+llm
+licenca de software
+licencas de software
+licenca de uso de software
+licencas de uso de software
+licenciamento de software
+licencas de uso
+licenca de uso
+cessao de direito de uso
+cessao de uso de software
+subscricao de software
+subscricao de licencas
+assinatura de software
+assinatura de licencas
+assinaturas de licencas
+assinatura de plataforma
+software como servico
+software as a service
+saas
+plataforma de colaboracao
+suite de produtividade
+suite de colaboracao
+ferramenta de produtividade
+ferramentas de produtividade
+correio eletronico em nuvem
+e-mail em nuvem
+email corporativo
+videoconferencia
+videoconferencias
+webconferencia
+plataforma de reunioes virtuais
+reunioes online

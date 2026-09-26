@@ -1,0 +1,75 @@
+name: Busca diária de editais
+
+on:
+  schedule:
+    # Todo dia às 06:47 (horário de Brasília) = 09:47 UTC
+    - cron: "47 9 * * *"
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: "Quantos dias para trás consultar (padrão: 2)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: busca-editais
+  cancel-in-progress: false
+
+jobs:
+  buscar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Consultar PNCP e gerar relatório
+        id: busca
+        continue-on-error: true
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORTA: ${{ secrets.SMTP_PORTA }}
+          SMTP_USUARIO: ${{ secrets.SMTP_USUARIO }}
+          SMTP_SENHA: ${{ secrets.SMTP_SENHA }}
+          EMAIL_DESTINO: ${{ secrets.EMAIL_DESTINO }}
+        run: |
+          if [ -n "${{ github.event.inputs.dias }}" ]; then
+            python scripts/buscar_editais.py --dias "${{ github.event.inputs.dias }}"
+          else
+            python scripts/buscar_editais.py
+          fi
+
+      - name: Publicar relatório como issue
+        if: always() && hashFiles('dados/corpo_issue.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSUNTO: ${{ steps.busca.outputs.assunto }}
+        run: |
+          gh label create editais --color 1d76db --description "Relatório diário de editais" --force
+          gh issue create --title "${ASSUNTO:-Relatório de editais}" --body-file dados/corpo_issue.md --label editais
+
+      - name: Salvar relatório e histórico no repositório
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add relatorios dados/editais_vistos.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Nada para salvar."
+          else
+            git commit -m "Relatório de editais $(TZ=America/Sao_Paulo date +%d/%m/%Y)"
+            git push
+          fi
+
+      - name: Sinalizar falha na consulta
+        if: steps.busca.outcome == 'failure'
+        run: |
+          echo "::error::A consulta ao PNCP falhou. Veja o log do passo 'Consultar PNCP'."
+          exit 1

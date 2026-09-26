@@ -1,0 +1,36 @@
+# TERMOS PRINCIPAIS - plataformas/marcas que a empresa fornece.
+# Qualquer edital cujo objeto contenha um destes termos entra no relatório
+# com prioridade ALTA. Um termo por linha. Linhas com # são ignoradas.
+# Não precisa se preocupar com acentos nem maiúsculas/minúsculas.
+chatgpt
+chat gpt
+openai
+open ai
+gpt-4
+gpt-5
+claude
+anthropic
+gemini
+perplexity
+google workspace
+g suite
+gsuite
+google cloud workspace
+zoom
+zoom workplace
+microsoft 365
+office 365
+m365
+o365
+copilot
+microsoft teams
+notion
+canva
+adobe creative cloud
+adobe acrobat
+grammarly
+midjourney
+deepl
+slack
+dropbox
+miro
