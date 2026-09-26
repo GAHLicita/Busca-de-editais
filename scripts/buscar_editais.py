@@ -20,6 +20,7 @@ import smtplib
 import sys
 import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -135,23 +136,75 @@ def requisitar(params: dict, tentativas: int = 6) -> dict:
     raise RuntimeError("inalcançável")
 
 
-def buscar_modalidade(codigo: str, data_inicial: str, data_final: str) -> list[dict]:
-    itens: list[dict] = []
-    pagina = 1
-    while True:
-        resposta = requisitar({
-            "dataInicial": data_inicial,
-            "dataFinal": data_final,
-            "codigoModalidadeContratacao": codigo,
-            "pagina": pagina,
-            "tamanhoPagina": TAMANHO_PAGINA,
-        })
-        itens.extend(resposta.get("data") or [])
-        total_paginas = resposta.get("totalPaginas") or 0
-        if pagina >= total_paginas:
-            return itens
-        pagina += 1
-        time.sleep(0.3)
+def _params(codigo: str, dia: str, pagina: int) -> dict:
+    return {
+        "dataInicial": dia,
+        "dataFinal": dia,
+        "codigoModalidadeContratacao": codigo,
+        "pagina": pagina,
+        "tamanhoPagina": TAMANHO_PAGINA,
+    }
+
+
+def buscar_todas(modalidades: dict, dias: list[str], prazo: float,
+                 trabalhadores: int = 8) -> tuple[dict[str, list[dict]], list[str]]:
+    """Baixa, em paralelo, todas as páginas de cada modalidade em cada dia.
+
+    Divide a consulta por dia para que cada busca tenha poucas páginas e para
+    que as páginas possam ser baixadas simultaneamente. Para quando o tempo
+    limite (prazo, em time.monotonic) é atingido, devolvendo o que já obteve.
+    Retorna (itens por modalidade, lista de avisos de erro).
+    """
+    itens: dict[str, list[dict]] = {c: [] for c in modalidades}
+    falhas: dict[str, int] = {c: 0 for c in modalidades}
+    puladas: dict[str, int] = {c: 0 for c in modalidades}
+
+    def baixar(codigo: str, dia: str, pagina: int):
+        if time.monotonic() > prazo:
+            return codigo, dia, pagina, None, "tempo"
+        try:
+            return codigo, dia, pagina, requisitar(_params(codigo, dia, pagina)), None
+        except Exception as erro:  # noqa: BLE001
+            return codigo, dia, pagina, None, str(erro)
+
+    def registrar(resultado) -> None:
+        codigo, dia, pagina, resposta, erro = resultado
+        if erro == "tempo":
+            puladas[codigo] += 1
+        elif erro:
+            falhas[codigo] += 1
+            print(f"  [falha] {modalidades[codigo]} {dia} pág. {pagina}: {erro}", flush=True)
+        else:
+            itens[codigo].extend(resposta.get("data") or [])
+
+    with ThreadPoolExecutor(max_workers=trabalhadores) as pool:
+        # 1ª fase: primeira página de cada (modalidade, dia) — revela o total de páginas.
+        restantes = []
+        futuros = [pool.submit(baixar, c, d, 1) for c in modalidades for d in dias]
+        for futuro in as_completed(futuros):
+            resultado = futuro.result()
+            registrar(resultado)
+            codigo, dia, _, resposta, _ = resultado
+            if resposta:
+                total = resposta.get("totalPaginas") or 0
+                restantes += [(codigo, dia, p) for p in range(2, total + 1)]
+        print(f"Primeiras páginas concluídas; faltam {len(restantes)} páginas.", flush=True)
+
+        # 2ª fase: demais páginas.
+        futuros = [pool.submit(baixar, *t) for t in restantes]
+        for n, futuro in enumerate(as_completed(futuros), 1):
+            registrar(futuro.result())
+            if n % 200 == 0:
+                print(f"  {n}/{len(futuros)} páginas baixadas", flush=True)
+
+    avisos = []
+    for codigo, nome in modalidades.items():
+        if falhas[codigo]:
+            avisos.append(f"{nome}: {falhas[codigo]} página(s) não puderam ser baixadas")
+        if puladas[codigo]:
+            avisos.append(f"{nome}: {puladas[codigo]} página(s) não consultadas por limite de tempo "
+                          f"(consulte um período menor)")
+    return itens, avisos
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +433,8 @@ def main() -> int:
     ap.add_argument("--sem-email", action="store_true", help="não enviar e-mail")
     ap.add_argument("--incluir-vistos", action="store_true",
                     help="incluir editais já informados em relatórios anteriores")
+    ap.add_argument("--minutos", type=float, default=40,
+                    help="tempo máximo de consulta ao PNCP, em minutos (padrão: 40)")
     args = ap.parse_args()
 
     conf = json.loads((CONFIG / "configuracoes.json").read_text(encoding="utf-8"))
@@ -387,22 +442,18 @@ def main() -> int:
     hoje = datetime.now(FUSO_BRASILIA)
     dias = args.dias if args.dias is not None else conf.get("dias_retroativos", 2)
     inicio = hoje - timedelta(days=dias)
-    data_inicial, data_final = inicio.strftime("%Y%m%d"), hoje.strftime("%Y%m%d")
+    datas = [(inicio + timedelta(days=n)).strftime("%Y%m%d") for n in range(dias + 1)]
     periodo = f"{inicio:%d/%m/%Y} a {hoje:%d/%m/%Y}"
+    print(f"Consultando PNCP de {periodo} ({len(datas)} dia(s))...", flush=True)
 
     vistos = carregar_vistos()
     encontrados: dict[str, Edital] = {}
-    erros: list[str] = []
+    prazo = time.monotonic() + args.minutos * 60
+    por_modalidade, erros = buscar_todas(conf["modalidades"], datas, prazo)
     total = 0
-    for codigo, nome in conf["modalidades"].items():
-        try:
-            itens = buscar_modalidade(codigo, data_inicial, data_final)
-        except Exception as erro:  # noqa: BLE001 - registrar e seguir com as demais
-            erros.append(f"{nome}: {erro}")
-            print(f"[ERRO] {nome}: {erro}", file=sys.stderr)
-            continue
+    for codigo, itens in por_modalidade.items():
         total += len(itens)
-        print(f"{nome}: {len(itens)} contratações publicadas")
+        print(f"{conf['modalidades'][codigo]}: {len(itens)} contratações publicadas", flush=True)
         for item in itens:
             texto = f"{item.get('objetoCompra') or ''} {item.get('informacaoComplementar') or ''}"
             prioridade, termos = filtro.avaliar(texto)
@@ -412,6 +463,7 @@ def main() -> int:
             if edital.id in vistos and not args.incluir_vistos:
                 continue
             encontrados[edital.id] = edital
+    falha_total = bool(erros) and total == 0
 
     editais = ordenar(list(encontrados.values()))
     md = relatorio_markdown(editais, hoje, periodo, erros, total)
@@ -427,7 +479,7 @@ def main() -> int:
 
     alta = sum(e.prioridade == "ALTA" for e in editais)
     assunto = f"Editais {hoje:%d/%m/%Y}: {len(editais)} novo(s) ({alta} prioridade alta)"
-    if erros and len(erros) == len(conf["modalidades"]):
+    if falha_total:
         assunto = f"Editais {hoje:%d/%m/%Y}: FALHA ao consultar o PNCP"
 
     if not args.sem_email:
@@ -443,7 +495,7 @@ def main() -> int:
     escrever_saida_github(assunto=assunto, quantidade=len(editais))
     print(assunto)
     # Falha total na consulta: sinaliza erro para o GitHub avisar.
-    return 1 if erros and len(erros) == len(conf["modalidades"]) else 0
+    return 1 if falha_total else 0
 
 
 if __name__ == "__main__":
