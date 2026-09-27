@@ -38,14 +38,20 @@ ChatGPT, Claude, Gemini, Perplexity, Google Workspace, Zoom, Microsoft 365 etc.
 
 ## Como o filtro funciona
 
-O objeto de cada contratação publicada é comparado com três listas de termos (sem
-diferenciar maiúsculas/minúsculas ou acentos):
+O objeto de cada contratação publicada é comparado com listas de termos (sem
+diferenciar maiúsculas/minúsculas, acentos ou pontuação):
 
-| Arquivo                                  | Efeito                                                      |
-|------------------------------------------|-------------------------------------------------------------|
-| [`config/termos_principais.txt`](config/termos_principais.txt) | Marcas/plataformas que vocês fornecem → **prioridade ALTA** |
-| [`config/termos_gerais.txt`](config/termos_gerais.txt)         | "licença de software", "IA generativa", "videoconferência"… → **prioridade MÉDIA** |
-| [`config/termos_exclusao.txt`](config/termos_exclusao.txt)     | Descarta falsos positivos (ex.: "lente zoom")               |
+| Arquivo | Efeito |
+|---|---|
+| [`config/termos_principais.txt`](config/termos_principais.txt) | Marcas/plataformas que vocês fornecem e IA generativa → **prioridade ALTA** |
+| [`config/termos_gerais.txt`](config/termos_gerais.txt) | Tipos de ferramenta ("inteligência artificial", "videoconferência", "design gráfico"…) → **prioridade MÉDIA** |
+| [`config/termos_contexto.txt`](config/termos_contexto.txt) | Palavras de licenciamento ("licença", "assinatura", "subscrição"…): uma delas precisa aparecer junto |
+| [`config/termos_exclusao.txt`](config/termos_exclusao.txt) | Descarta falsos positivos (ex.: "lente zoom", cursos e eventos sobre IA) |
+| [`config/termos_exclusao_media.txt`](config/termos_exclusao_media.txt) | Descarta da prioridade média sistemas de gestão, desenvolvimento e customização |
+
+O relatório traz só editais **com prazo de proposta ainda aberto**. Contratações
+diretas sem disputa (o órgão já escolheu o fornecedor) aparecem numa seção à
+parte, resumida, para acompanhamento de mercado.
 
 Para acrescentar ou remover um termo, basta editar o arquivo pelo próprio site do
 GitHub (ícone de lápis), um termo por linha, e salvar (*Commit changes*).

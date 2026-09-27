@@ -1,7 +1,27 @@
 # TERMOS DE EXCLUSÃO - se o objeto contiver algum destes termos, o edital
-# é descartado (mesmo que tenha um termo principal/geral).
+# é descartado (vale para prioridade ALTA e MÉDIA).
 # Use para eliminar falsos positivos recorrentes. Um termo por linha.
-lente zoom
-objetiva zoom
-zoom optico
-zoom otico
+# Produtos físicos que citam "zoom"
+lente
+lentes
+lanterna
+aeronave
+drone
+binoculo
+# Cursos, eventos e capacitações sobre as ferramentas
+curso
+cursos
+inscricao
+inscricoes
+workshop
+masterclass
+palestra
+pos graduacao
+mba
+participacao em evento
+participacao dos servidores
+participacao das servidoras
+participacao de servidores
+servico de capacitacao
+servicos de capacitacao
+capacitacao presencial

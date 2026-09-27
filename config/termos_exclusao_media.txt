@@ -1,0 +1,26 @@
+# EXCLUSÃO SÓ PARA PRIORIDADE MÉDIA - descarta editais genéricos que não são
+# o negócio da empresa (sistemas de gestão, desenvolvimento, customização).
+# Não afeta editais que citam uma plataforma da lista principal.
+sistema de gestao
+sistemas de gestao
+gestao publica
+gestao escolar
+gestao em saude
+gestao tributaria
+sistema informatizado
+sistemas informatizados
+sistema integrado
+sistemas integrados
+solucao integrada
+implantacao
+desenvolvimento
+customizacao
+personalizado
+personalizada
+migracao de dados
+hospedagem
+locacao de software
+locacao de sistema
+equipamentos
+videomonitoramento
+cameras

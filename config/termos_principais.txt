@@ -1,13 +1,12 @@
 # TERMOS PRINCIPAIS - plataformas/marcas que a empresa fornece.
-# Qualquer edital cujo objeto contenha um destes termos entra no relatório
-# com prioridade ALTA. Um termo por linha. Linhas com # são ignoradas.
-# Não precisa se preocupar com acentos nem maiúsculas/minúsculas.
+# O edital entra com prioridade ALTA quando o objeto cita um destes termos
+# E também uma palavra de licenciamento (ver termos_contexto.txt).
+# Um termo por linha. Linhas com # são ignoradas.
+# Não precisa se preocupar com acentos, maiúsculas/minúsculas ou pontuação.
 chatgpt
 chat gpt
 openai
 open ai
-gpt-4
-gpt-5
 claude
 anthropic
 gemini
@@ -15,9 +14,7 @@ perplexity
 google workspace
 g suite
 gsuite
-google cloud workspace
 zoom
-zoom workplace
 microsoft 365
 office 365
 m365
@@ -28,9 +25,16 @@ notion
 canva
 adobe creative cloud
 adobe acrobat
+capcut
 grammarly
 midjourney
 deepl
 slack
 dropbox
 miro
+# IA generativa em geral (é exatamente o tipo de licença que a empresa fornece)
+ia generativa
+inteligencia artificial generativa
+modelo de linguagem
+modelos de linguagem
+llm

@@ -1,0 +1,19 @@
+# PALAVRAS DE LICENCIAMENTO - pelo menos uma precisa aparecer no objeto para
+# o edital entrar no relatório (evita, por exemplo, "lanterna com zoom" ou
+# "curso sobre ChatGPT"). Um termo por linha. Linhas com # são ignoradas.
+licenca
+licencas
+licenciamento
+assinatura
+assinaturas
+subscricao
+subscricoes
+cessao de uso
+cessao de direito de uso
+cessao temporaria de direitos
+direito de uso
+plano business
+plano enterprise
+plano team
+plano pro
+contas

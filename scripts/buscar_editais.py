@@ -48,10 +48,10 @@ LIMITE_CORPO_ISSUE = 60000
 # ---------------------------------------------------------------------------
 
 def normalizar(texto: str) -> str:
-    """Minúsculas, sem acentos e com espaços simples."""
+    """Minúsculas, sem acentos, sem pontuação e com espaços simples."""
     texto = unicodedata.normalize("NFKD", texto or "")
     texto = "".join(c for c in texto if not unicodedata.combining(c))
-    return re.sub(r"\s+", " ", texto.lower()).strip()
+    return re.sub(r"[^a-z0-9]+", " ", texto.lower()).strip()
 
 
 def ler_termos(nome_arquivo: str) -> list[str]:
@@ -61,47 +61,64 @@ def ler_termos(nome_arquivo: str) -> list[str]:
     termos = []
     for linha in caminho.read_text(encoding="utf-8").splitlines():
         linha = linha.strip()
-        if linha and not linha.startswith("#"):
+        if linha and not linha.startswith("#") and normalizar(linha):
             termos.append(normalizar(linha))
     return termos
 
 
 def compilar(termos: list[str]) -> list[tuple[str, re.Pattern]]:
-    padroes = []
-    for termo in termos:
-        corpo = r"\s+".join(re.escape(p) for p in termo.split(" "))
-        padroes.append((termo, re.compile(rf"(?<![a-z0-9]){corpo}(?![a-z0-9])")))
-    return padroes
+    return [(t, re.compile(rf"(?<![a-z0-9]){re.escape(t)}(?![a-z0-9])")) for t in termos]
+
+
+# Para editais que citam uma plataforma da lista principal, além das palavras
+# de licenciamento também valem estas, pois o objeto costuma descrever a
+# contratação como "solução", "plataforma", "renovação" etc.
+CONTEXTO_EXTRA_MARCAS = [
+    "software", "softwares", "plataforma", "solucao", "ferramenta", "saas", "nuvem",
+    "renovacao", "ambiente", "business", "enterprise", "workplace", "usuarios",
+]
 
 
 @dataclass
 class Filtro:
     principais: list[tuple[str, re.Pattern]]
     gerais: list[tuple[str, re.Pattern]]
+    contexto: list[tuple[str, re.Pattern]]
+    contexto_marcas: list[tuple[str, re.Pattern]]
     exclusao: list[tuple[str, re.Pattern]]
+    exclusao_media: list[tuple[str, re.Pattern]]
     incluir_media: bool = True
 
     @classmethod
     def carregar(cls, incluir_media: bool = True) -> "Filtro":
+        contexto = ler_termos("termos_contexto.txt")
         return cls(
             compilar(ler_termos("termos_principais.txt")),
             compilar(ler_termos("termos_gerais.txt")),
+            compilar(contexto),
+            compilar(contexto + CONTEXTO_EXTRA_MARCAS),
             compilar(ler_termos("termos_exclusao.txt")),
+            compilar(ler_termos("termos_exclusao_media.txt")),
             incluir_media,
         )
+
+    @staticmethod
+    def _tem(padroes, texto: str) -> bool:
+        return any(p.search(texto) for _, p in padroes)
 
     def avaliar(self, texto: str) -> tuple[str | None, list[str]]:
         """Retorna (prioridade, termos encontrados). Prioridade None = descartar."""
         texto = normalizar(texto)
-        if any(p.search(texto) for _, p in self.exclusao):
+        if self._tem(self.exclusao, texto):
             return None, []
         achados = [t for t, p in self.principais if p.search(texto)]
-        if achados:
+        if achados and self._tem(self.contexto_marcas, texto):
             return "ALTA", achados
-        if self.incluir_media:
-            achados = [t for t, p in self.gerais if p.search(texto)]
-            if achados:
-                return "MÉDIA", achados
+        if not self.incluir_media or self._tem(self.exclusao_media, texto):
+            return None, []
+        achados = [t for t, p in self.gerais if p.search(texto)]
+        if achados and self._tem(self.contexto, texto):
+            return "MÉDIA", achados
         return None, []
 
 
@@ -128,6 +145,8 @@ def requisitar(params: dict, tentativas: int = 6) -> dict:
                 return {"data": [], "totalPaginas": 0}
             if erro.code not in (429, 500, 502, 503, 504) or tentativa == tentativas:
                 raise
+            if erro.code == 429 and (erro.headers.get("Retry-After") or "").isdigit():
+                espera = max(espera, int(erro.headers["Retry-After"]))
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ConnectionError):
             if tentativa == tentativas:
                 raise
@@ -147,7 +166,7 @@ def _params(codigo: str, dia: str, pagina: int) -> dict:
 
 
 def buscar_todas(modalidades: dict, dias: list[str], prazo: float,
-                 trabalhadores: int = 8) -> tuple[dict[str, list[dict]], list[str]]:
+                 trabalhadores: int = 4) -> tuple[dict[str, list[dict]], list[str]]:
     """Baixa, em paralelo, todas as páginas de cada modalidade em cada dia.
 
     Divide a consulta por dia para que cada busca tenha poucas páginas e para
@@ -156,7 +175,7 @@ def buscar_todas(modalidades: dict, dias: list[str], prazo: float,
     Retorna (itens por modalidade, lista de avisos de erro).
     """
     itens: dict[str, list[dict]] = {c: [] for c in modalidades}
-    falhas: dict[str, int] = {c: 0 for c in modalidades}
+    falhas: list[tuple[str, str, int]] = []
     puladas: dict[str, int] = {c: 0 for c in modalidades}
 
     def baixar(codigo: str, dia: str, pagina: int):
@@ -172,7 +191,7 @@ def buscar_todas(modalidades: dict, dias: list[str], prazo: float,
         if erro == "tempo":
             puladas[codigo] += 1
         elif erro:
-            falhas[codigo] += 1
+            falhas.append((codigo, dia, pagina))
             print(f"  [falha] {modalidades[codigo]} {dia} pág. {pagina}: {erro}", flush=True)
         else:
             itens[codigo].extend(resposta.get("data") or [])
@@ -197,10 +216,26 @@ def buscar_todas(modalidades: dict, dias: list[str], prazo: float,
             if n % 200 == 0:
                 print(f"  {n}/{len(futuros)} páginas baixadas", flush=True)
 
+    # 3ª fase: nova tentativa, mais devagar, das páginas que falharam (ex.: limite de
+    # requisições do PNCP). Páginas 1 que falharem aqui não revelam páginas seguintes.
+    if falhas:
+        pendentes, falhas[:] = list(falhas), []
+        print(f"Tentando novamente {len(pendentes)} página(s) que falharam...", flush=True)
+        time.sleep(30)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            for resultado in pool.map(lambda t: baixar(*t), pendentes):
+                registrar(resultado)
+                codigo, dia, pagina, resposta, _ = resultado
+                if resposta and pagina == 1:
+                    total = resposta.get("totalPaginas") or 0
+                    for extra in pool.map(lambda p: baixar(codigo, dia, p), range(2, total + 1)):
+                        registrar(extra)
+
     avisos = []
     for codigo, nome in modalidades.items():
-        if falhas[codigo]:
-            avisos.append(f"{nome}: {falhas[codigo]} página(s) não puderam ser baixadas")
+        n_falhas = sum(1 for c, _, _ in falhas if c == codigo)
+        if n_falhas:
+            avisos.append(f"{nome}: {n_falhas} página(s) não puderam ser baixadas")
         if puladas[codigo]:
             avisos.append(f"{nome}: {puladas[codigo]} página(s) não consultadas por limite de tempo "
                           f"(consulte um período menor)")
@@ -278,30 +313,55 @@ def ordenar(editais: list[Edital]) -> list[Edital]:
     return sorted(editais, key=lambda e: (e.prioridade != "ALTA", e.encerramento or "9999"))
 
 
-# ---------------------------------------------------------------------------
-# Relatórios
-# ---------------------------------------------------------------------------
+def encerrado(edital: Edital, agora: datetime) -> bool:
+    """True se o prazo de propostas já passou (datas do PNCP são de Brasília)."""
+    if not edital.encerramento:
+        return False
+    try:
+        fim = datetime.fromisoformat(edital.encerramento.replace("Z", ""))
+    except ValueError:
+        return False
+    return fim < agora.replace(tzinfo=None)
+
+
+def agrupar(editais: list[Edital]):
+    """Separa em (alta com prazo aberto, média com prazo aberto, sem prazo de proposta)."""
+    editais = ordenar(editais)
+    com_prazo = [e for e in editais if e.encerramento]
+    return ([e for e in com_prazo if e.prioridade == "ALTA"],
+            [e for e in com_prazo if e.prioridade == "MÉDIA"],
+            [e for e in editais if not e.encerramento])
+
+
+TITULO_ALTA = "🔴 Prioridade alta — plataformas que fornecemos"
+TITULO_MEDIA = "🟡 Prioridade média — licenças de ferramentas da nossa área"
+TITULO_DIRETAS = "⚪ Contratações diretas, sem prazo de proposta (acompanhamento de mercado)"
+EXPLICA_DIRETAS = ("Dispensas/inexigibilidades publicadas sem disputa aberta: normalmente o órgão já "
+                   "escolheu o fornecedor. Servem para saber quem compra o quê e a que preço.")
+
+
+def resumo(editais, alta, media, diretas, total_analisado) -> str:
+    return (f"Contratações analisadas: **{total_analisado}** · Editais novos com proposta aberta: "
+            f"**{len(alta) + len(media)}** ({len(alta)} prioridade alta, {len(media)} prioridade média)"
+            f" · Contratações diretas: **{len(diretas)}**")
+
 
 def relatorio_markdown(editais, hoje, periodo, erros, total_analisado) -> str:
-    alta = [e for e in editais if e.prioridade == "ALTA"]
-    media = [e for e in editais if e.prioridade == "MÉDIA"]
+    alta, media, diretas = agrupar(editais)
     linhas = [
         f"# Novos editais — {hoje:%d/%m/%Y}",
         "",
         f"Período de publicação consultado no PNCP: **{periodo}**  ",
-        f"Contratações analisadas: **{total_analisado}** · "
-        f"Novos editais relevantes: **{len(editais)}** "
-        f"({len(alta)} prioridade alta, {len(media)} prioridade média)",
+        resumo(editais, alta, media, diretas, total_analisado),
         "",
     ]
     if erros:
         linhas += ["> ⚠️ **Atenção:** algumas consultas falharam e o relatório pode estar incompleto:"]
         linhas += [f"> - {erro}" for erro in erros]
         linhas.append("")
-    if not editais:
-        linhas.append("Nenhum edital novo na área de licenças de software foi encontrado hoje.")
-    for titulo, grupo in (("🔴 Prioridade alta — plataformas que fornecemos", alta),
-                          ("🟡 Prioridade média — licenças/assinaturas de software em geral", media)):
+    if not alta and not media:
+        linhas += ["Nenhum edital novo com proposta aberta na nossa área foi encontrado hoje.", ""]
+    for titulo, grupo in ((TITULO_ALTA, alta), (TITULO_MEDIA, media)):
         if not grupo:
             continue
         linhas += [f"## {titulo}", ""]
@@ -312,11 +372,11 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado) -> str:
                 "",
                 f"**Objeto:** {e.objeto}",
                 "",
+                f"- **Propostas até:** **{fmt_data(e.encerramento)}** (abertura {fmt_data(e.abertura)})",
                 f"- **Modalidade:** {e.modalidade}",
                 f"- **Unidade:** {e.unidade or '—'}",
                 f"- **Valor estimado:** {fmt_valor(e.valor)}",
                 f"- **Publicado em:** {fmt_data(e.publicacao)}",
-                f"- **Propostas:** de {fmt_data(e.abertura)} até **{fmt_data(e.encerramento)}**",
                 f"- **Termos encontrados:** {', '.join(e.termos)}",
                 f"- **Nº PNCP:** `{e.id}`",
             ]
@@ -325,47 +385,68 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado) -> str:
             if e.link_origem:
                 linhas.append(f"- **Portal de origem (onde se envia a proposta):** {e.link_origem}")
             linhas.append("")
+    if diretas:
+        linhas += [f"## {TITULO_DIRETAS}", "", EXPLICA_DIRETAS, ""]
+        for e in diretas:
+            local = " / ".join(p for p in (e.municipio, e.uf) if p)
+            link = f" — [PNCP]({e.link_pncp})" if e.link_pncp else ""
+            linhas.append(f"- **{e.orgao}** ({local}) · {e.modalidade} · {fmt_valor(e.valor)} · "
+                          f"{e.objeto[:220]}{'…' if len(e.objeto) > 220 else ''}{link}")
+        linhas.append("")
     return "\n".join(linhas).rstrip() + "\n"
 
 
 def relatorio_html(editais, hoje, periodo, erros, total_analisado) -> str:
     esc = html.escape
-    alta = sum(e.prioridade == "ALTA" for e in editais)
+    alta, media, diretas = agrupar(editais)
     partes = [
         "<html><body style=\"font-family:Arial,Helvetica,sans-serif;color:#222;max-width:820px\">",
         f"<h2>Novos editais — {hoje:%d/%m/%Y}</h2>",
         f"<p>Período consultado no PNCP: <b>{esc(periodo)}</b><br>"
-        f"Contratações analisadas: <b>{total_analisado}</b> · Novos editais relevantes: "
-        f"<b>{len(editais)}</b> ({alta} prioridade alta, {len(editais) - alta} prioridade média)</p>",
+        f"Contratações analisadas: <b>{total_analisado}</b> · Editais novos com proposta aberta: "
+        f"<b>{len(alta) + len(media)}</b> ({len(alta)} prioridade alta, {len(media)} prioridade média)"
+        f" · Contratações diretas: <b>{len(diretas)}</b></p>",
     ]
     if erros:
         partes.append("<p style=\"background:#fff4e5;padding:8px;border-left:4px solid #f0a020\">"
                       "<b>Atenção:</b> algumas consultas falharam e o relatório pode estar incompleto:<br>"
                       + "<br>".join(esc(e) for e in erros) + "</p>")
-    if not editais:
-        partes.append("<p>Nenhum edital novo na área de licenças de software foi encontrado hoje.</p>")
-    for e in editais:
-        cor = "#c0392b" if e.prioridade == "ALTA" else "#d4a017"
-        local = " / ".join(p for p in (e.municipio, e.uf) if p)
-        links = []
-        if e.link_pncp:
-            links.append(f"<a href=\"{esc(e.link_pncp)}\">Ver no PNCP</a>")
-        if e.link_origem:
-            links.append(f"<a href=\"{esc(e.link_origem)}\">Portal de origem</a>")
-        partes.append(
-            f"<div style=\"border:1px solid #ddd;border-left:5px solid {cor};padding:10px 14px;margin:14px 0\">"
-            f"<div style=\"font-size:12px;color:{cor};font-weight:bold\">PRIORIDADE {e.prioridade}</div>"
-            f"<div style=\"font-size:16px;font-weight:bold;margin:4px 0\">{esc(e.orgao)} ({esc(local)})</div>"
-            f"<p style=\"margin:6px 0\"><b>Objeto:</b> {esc(e.objeto)}</p>"
-            f"<table style=\"font-size:14px\">"
-            f"<tr><td><b>Modalidade</b></td><td>{esc(e.modalidade)}</td></tr>"
-            f"<tr><td><b>Valor estimado</b></td><td>{esc(fmt_valor(e.valor))}</td></tr>"
-            f"<tr><td><b>Publicado em</b></td><td>{fmt_data(e.publicacao)}</td></tr>"
-            f"<tr><td><b>Propostas até</b></td><td><b>{fmt_data(e.encerramento)}</b></td></tr>"
-            f"<tr><td><b>Termos</b></td><td>{esc(', '.join(e.termos))}</td></tr>"
-            f"<tr><td><b>Nº PNCP</b></td><td>{esc(e.id)}</td></tr>"
-            f"</table><p style=\"margin:8px 0 0\">{' · '.join(links)}</p></div>"
-        )
+    if not alta and not media:
+        partes.append("<p>Nenhum edital novo com proposta aberta na nossa área foi encontrado hoje.</p>")
+    for titulo, grupo, cor in ((TITULO_ALTA, alta, "#c0392b"), (TITULO_MEDIA, media, "#d4a017")):
+        if not grupo:
+            continue
+        partes.append(f"<h3 style=\"margin-top:28px\">{esc(titulo)}</h3>")
+        for e in grupo:
+            local = " / ".join(p for p in (e.municipio, e.uf) if p)
+            links = []
+            if e.link_pncp:
+                links.append(f"<a href=\"{esc(e.link_pncp)}\">Ver no PNCP</a>")
+            if e.link_origem:
+                links.append(f"<a href=\"{esc(e.link_origem)}\">Portal de origem (enviar proposta)</a>")
+            partes.append(
+                f"<div style=\"border:1px solid #ddd;border-left:5px solid {cor};padding:10px 14px;margin:14px 0\">"
+                f"<div style=\"font-size:16px;font-weight:bold;margin:4px 0\">{esc(e.orgao)} ({esc(local)})</div>"
+                f"<p style=\"margin:6px 0\"><b>Objeto:</b> {esc(e.objeto)}</p>"
+                f"<table style=\"font-size:14px\">"
+                f"<tr><td><b>Propostas até</b></td><td><b style=\"color:{cor}\">{fmt_data(e.encerramento)}</b></td></tr>"
+                f"<tr><td><b>Modalidade</b></td><td>{esc(e.modalidade)}</td></tr>"
+                f"<tr><td><b>Valor estimado</b></td><td>{esc(fmt_valor(e.valor))}</td></tr>"
+                f"<tr><td><b>Publicado em</b></td><td>{fmt_data(e.publicacao)}</td></tr>"
+                f"<tr><td><b>Termos</b></td><td>{esc(', '.join(e.termos))}</td></tr>"
+                f"<tr><td><b>Nº PNCP</b></td><td>{esc(e.id)}</td></tr>"
+                f"</table><p style=\"margin:8px 0 0\">{' · '.join(links)}</p></div>"
+            )
+    if diretas:
+        partes.append(f"<h3 style=\"margin-top:28px\">{esc(TITULO_DIRETAS)}</h3>"
+                      f"<p style=\"font-size:13px;color:#555\">{esc(EXPLICA_DIRETAS)}</p><ul style=\"font-size:13px\">")
+        for e in diretas:
+            local = " / ".join(p for p in (e.municipio, e.uf) if p)
+            link = f" — <a href=\"{esc(e.link_pncp)}\">PNCP</a>" if e.link_pncp else ""
+            objeto = e.objeto[:220] + ("…" if len(e.objeto) > 220 else "")
+            partes.append(f"<li><b>{esc(e.orgao)}</b> ({esc(local)}) · {esc(e.modalidade)} · "
+                          f"{esc(fmt_valor(e.valor))} · {esc(objeto)}{link}</li>")
+        partes.append("</ul>")
     partes.append("<p style=\"font-size:12px;color:#777\">Relatório gerado automaticamente a partir do "
                   "PNCP — Portal Nacional de Contratações Públicas.</p></body></html>")
     return "\n".join(partes)
@@ -460,6 +541,8 @@ def main() -> int:
             if not prioridade:
                 continue
             edital = extrair(item, prioridade, termos)
+            if encerrado(edital, hoje):
+                continue
             if edital.id in vistos and not args.incluir_vistos:
                 continue
             encontrados[edital.id] = edital
@@ -477,8 +560,9 @@ def main() -> int:
     (DADOS / "corpo_issue.md").parent.mkdir(exist_ok=True)
     (DADOS / "corpo_issue.md").write_text(corpo_issue, encoding="utf-8")
 
-    alta = sum(e.prioridade == "ALTA" for e in editais)
-    assunto = f"Editais {hoje:%d/%m/%Y}: {len(editais)} novo(s) ({alta} prioridade alta)"
+    alta, media, _ = agrupar(editais)
+    assunto = (f"Editais {hoje:%d/%m/%Y}: {len(alta) + len(media)} novo(s) com proposta aberta "
+               f"({len(alta)} prioridade alta)")
     if falha_total:
         assunto = f"Editais {hoje:%d/%m/%Y}: FALHA ao consultar o PNCP"
 
