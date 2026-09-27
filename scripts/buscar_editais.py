@@ -37,6 +37,9 @@ RELATORIOS = RAIZ / "relatorios"
 ARQUIVO_VISTOS = DADOS / "editais_vistos.json"
 
 API_PNCP = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
+# Contratações com período de recebimento de propostas em aberto
+API_PNCP_ABERTOS = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta"
+ABERTOS = "abertos"
 TAMANHO_PAGINA = 50
 DIAS_MEMORIA = 90  # por quanto tempo lembrar de um edital já informado
 FUSO_BRASILIA = timezone(timedelta(hours=-3))
@@ -126,8 +129,8 @@ class Filtro:
 # Consulta ao PNCP
 # ---------------------------------------------------------------------------
 
-def requisitar(params: dict, tentativas: int = 6) -> dict:
-    url = f"{API_PNCP}?{urllib.parse.urlencode(params)}"
+def requisitar(params: dict, tentativas: int = 6, api: str = API_PNCP) -> dict:
+    url = f"{api}?{urllib.parse.urlencode(params)}"
     espera = 3
     for tentativa in range(1, tentativas + 1):
         try:
@@ -155,19 +158,23 @@ def requisitar(params: dict, tentativas: int = 6) -> dict:
     raise RuntimeError("inalcançável")
 
 
-def _params(codigo: str, dia: str, pagina: int) -> dict:
-    return {
-        "dataInicial": dia,
-        "dataFinal": dia,
-        "codigoModalidadeContratacao": codigo,
-        "pagina": pagina,
-        "tamanhoPagina": TAMANHO_PAGINA,
-    }
+def _consulta(codigo: str, chave: str, pagina: int) -> tuple[dict, str]:
+    """Parâmetros e endereço da consulta. chave = dia (AAAAMMDD) ou ABERTOS."""
+    if chave == ABERTOS:
+        limite = (datetime.now(FUSO_BRASILIA) + timedelta(days=365)).strftime("%Y%m%d")
+        params = {"dataFinal": limite, "codigoModalidadeContratacao": codigo}
+        api = API_PNCP_ABERTOS
+    else:
+        params = {"dataInicial": chave, "dataFinal": chave, "codigoModalidadeContratacao": codigo}
+        api = API_PNCP
+    params.update(pagina=pagina, tamanhoPagina=TAMANHO_PAGINA)
+    return params, api
 
 
 def buscar_todas(modalidades: dict, dias: list[str], prazo: float,
                  trabalhadores: int = 4) -> tuple[dict[str, list[dict]], list[str]]:
-    """Baixa, em paralelo, todas as páginas de cada modalidade em cada dia.
+    """Baixa, em paralelo, todas as páginas de cada modalidade em cada dia
+    (ou, com dias=[ABERTOS], todas as contratações com proposta em aberto).
 
     Divide a consulta por dia para que cada busca tenha poucas páginas e para
     que as páginas possam ser baixadas simultaneamente. Para quando o tempo
@@ -182,7 +189,8 @@ def buscar_todas(modalidades: dict, dias: list[str], prazo: float,
         if time.monotonic() > prazo:
             return codigo, dia, pagina, None, "tempo"
         try:
-            return codigo, dia, pagina, requisitar(_params(codigo, dia, pagina)), None
+            params, api = _consulta(codigo, dia, pagina)
+            return codigo, dia, pagina, requisitar(params, api=api), None
         except Exception as erro:  # noqa: BLE001
             return codigo, dia, pagina, None, str(erro)
 
@@ -351,7 +359,7 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado) -> str:
     linhas = [
         f"# Novos editais — {hoje:%d/%m/%Y}",
         "",
-        f"Período de publicação consultado no PNCP: **{periodo}**  ",
+        f"Consulta no PNCP: **{periodo}**  ",
         resumo(editais, alta, media, diretas, total_analisado),
         "",
     ]
@@ -402,7 +410,7 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado) -> str:
     partes = [
         "<html><body style=\"font-family:Arial,Helvetica,sans-serif;color:#222;max-width:820px\">",
         f"<h2>Novos editais — {hoje:%d/%m/%Y}</h2>",
-        f"<p>Período consultado no PNCP: <b>{esc(periodo)}</b><br>"
+        f"<p>Consulta no PNCP: <b>{esc(periodo)}</b><br>"
         f"Contratações analisadas: <b>{total_analisado}</b> · Editais novos com proposta aberta: "
         f"<b>{len(alta) + len(media)}</b> ({len(alta)} prioridade alta, {len(media)} prioridade média)"
         f" · Contratações diretas: <b>{len(diretas)}</b></p>",
@@ -514,6 +522,9 @@ def main() -> int:
     ap.add_argument("--sem-email", action="store_true", help="não enviar e-mail")
     ap.add_argument("--incluir-vistos", action="store_true",
                     help="incluir editais já informados em relatórios anteriores")
+    ap.add_argument("--abertos", action="store_true",
+                    help="buscar todos os editais com prazo de proposta ainda aberto, "
+                         "independentemente da data de publicação (inclui já informados)")
     ap.add_argument("--minutos", type=float, default=40,
                     help="tempo máximo de consulta ao PNCP, em minutos (padrão: 40)")
     args = ap.parse_args()
@@ -524,8 +535,12 @@ def main() -> int:
     dias = args.dias if args.dias is not None else conf.get("dias_retroativos", 2)
     inicio = hoje - timedelta(days=dias)
     datas = [(inicio + timedelta(days=n)).strftime("%Y%m%d") for n in range(dias + 1)]
-    periodo = f"{inicio:%d/%m/%Y} a {hoje:%d/%m/%Y}"
-    print(f"Consultando PNCP de {periodo} ({len(datas)} dia(s))...", flush=True)
+    periodo = f"publicados de {inicio:%d/%m/%Y} a {hoje:%d/%m/%Y}"
+    if args.abertos:
+        datas = [ABERTOS]
+        periodo = f"todos os editais com proposta aberta em {hoje:%d/%m/%Y}"
+        args.incluir_vistos = True
+    print(f"Consultando PNCP: {periodo}...", flush=True)
 
     vistos = carregar_vistos()
     encontrados: dict[str, Edital] = {}
@@ -563,6 +578,9 @@ def main() -> int:
     alta, media, _ = agrupar(editais)
     assunto = (f"Editais {hoje:%d/%m/%Y}: {len(alta) + len(media)} novo(s) com proposta aberta "
                f"({len(alta)} prioridade alta)")
+    if args.abertos:
+        assunto = (f"Editais em aberto {hoje:%d/%m/%Y}: {len(alta) + len(media)} com proposta aberta "
+                   f"({len(alta)} prioridade alta)")
     if falha_total:
         assunto = f"Editais {hoje:%d/%m/%Y}: FALHA ao consultar o PNCP"
 

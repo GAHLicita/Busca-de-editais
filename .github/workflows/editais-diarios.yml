@@ -6,6 +6,10 @@ on:
     - cron: "47 9 * * *"
   workflow_dispatch:
     inputs:
+      abertos:
+        description: "Buscar TODOS os editais com proposta ainda aberta (ignora os dias abaixo)"
+        type: boolean
+        default: false
       dias:
         description: "Quantos dias para trás consultar (padrão: 2)"
         required: false
@@ -41,7 +45,9 @@ jobs:
           SMTP_SENHA: ${{ secrets.SMTP_SENHA }}
           EMAIL_DESTINO: ${{ secrets.EMAIL_DESTINO }}
         run: |
-          if [ -n "${{ github.event.inputs.dias }}" ]; then
+          if [ "${{ github.event.inputs.abertos }}" = "true" ]; then
+            python scripts/buscar_editais.py --abertos
+          elif [ -n "${{ github.event.inputs.dias }}" ]; then
             python scripts/buscar_editais.py --dias "${{ github.event.inputs.dias }}"
           else
             python scripts/buscar_editais.py

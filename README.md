@@ -66,8 +66,11 @@ Um edital aparece **uma única vez**: os já informados ficam registrados em
 
 ## Rodar agora (sem esperar o horário)
 
-Aba **Actions → Busca diária de editais → Run workflow**. Opcionalmente informe
-quantos dias para trás consultar (ex.: `30` para um levantamento do último mês).
+Aba **Actions → Busca diária de editais → Run workflow**.
+
+- Marque **"Buscar TODOS os editais com proposta ainda aberta"** para um levantamento
+  completo do que está aberto hoje no PNCP, com os critérios atuais.
+- Ou informe quantos dias para trás consultar (ex.: `7`).
 
 ## Rodar no computador (opcional)
 
