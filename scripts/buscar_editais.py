@@ -570,10 +570,13 @@ def main() -> int:
     htm = relatorio_html(editais, hoje, periodo, erros, total)
 
     RELATORIOS.mkdir(exist_ok=True)
-    (RELATORIOS / f"{hoje:%Y-%m-%d}.md").write_text(md, encoding="utf-8")
+    # O levantamento de editais em aberto tem nome próprio para não sobrescrever o
+    # relatório diário (cuja existência indica que a busca do dia já rodou).
+    nome_relatorio = f"{hoje:%Y-%m-%d}{'-abertos' if args.abertos else ''}.md"
+    (RELATORIOS / nome_relatorio).write_text(md, encoding="utf-8")
     corpo_issue = md if len(md) <= LIMITE_CORPO_ISSUE else (
         md[:LIMITE_CORPO_ISSUE] + f"\n\n… relatório truncado. Veja o arquivo completo em "
-                                  f"`relatorios/{hoje:%Y-%m-%d}.md`.\n")
+                                  f"`relatorios/{nome_relatorio}`.\n")
     (DADOS / "corpo_issue.md").parent.mkdir(exist_ok=True)
     (DADOS / "corpo_issue.md").write_text(corpo_issue, encoding="utf-8")
 
