@@ -2,8 +2,14 @@ name: Busca diária de editais
 
 on:
   schedule:
-    # Todo dia às 06:47 (horário de Brasília) = 09:47 UTC
+    # Todo dia às 06:47 (horário de Brasília) = 09:47 UTC.
+    # O GitHub às vezes atrasa ou descarta execuções agendadas; os horários
+    # seguintes são reservas e só consultam o PNCP se a busca do dia ainda
+    # não tiver rodado (ver passo "Verificar se a busca de hoje já rodou").
     - cron: "47 9 * * *"
+    - cron: "17 11 * * *"
+    - cron: "17 13 * * *"
+    - cron: "17 16 * * *"
   workflow_dispatch:
     inputs:
       abertos:
@@ -29,13 +35,27 @@ jobs:
     timeout-minutes: 130
     steps:
       - uses: actions/checkout@v4
+        with:
+          # versão mais recente do ramo (inclui o relatório de uma execução anterior do dia)
+          ref: ${{ github.ref }}
+
+      - name: Verificar se a busca de hoje já rodou
+        id: hoje
+        run: |
+          arquivo="relatorios/$(TZ=America/Sao_Paulo date +%Y-%m-%d).md"
+          if [ "${{ github.event_name }}" = "schedule" ] && [ -f "$arquivo" ]; then
+            echo "Busca de hoje já feita ($arquivo); horário reserva não precisa rodar."
+            echo "pular=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-python@v5
+        if: steps.hoje.outputs.pular != 'true'
         with:
           python-version: "3.12"
 
       - name: Consultar PNCP e gerar relatório
         id: busca
+        if: steps.hoje.outputs.pular != 'true'
         continue-on-error: true
         env:
           PYTHONUNBUFFERED: "1"
@@ -54,7 +74,7 @@ jobs:
           fi
 
       - name: Publicar relatório como issue
-        if: always() && hashFiles('dados/corpo_issue.md') != ''
+        if: always() && steps.busca.outputs.publicar == 'true' && hashFiles('dados/corpo_issue.md') != ''
         env:
           GH_TOKEN: ${{ github.token }}
           ASSUNTO: ${{ steps.busca.outputs.assunto }}
@@ -63,7 +83,7 @@ jobs:
           gh issue create --title "${ASSUNTO:-Relatório de editais}" --body-file dados/corpo_issue.md --label editais
 
       - name: Salvar relatório e histórico no repositório
-        if: always()
+        if: always() && steps.hoje.outputs.pular != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -72,6 +92,7 @@ jobs:
             echo "Nada para salvar."
           else
             git commit -m "Relatório de editais $(TZ=America/Sao_Paulo date +%d/%m/%Y)"
+            git pull --rebase --quiet
             git push
           fi
 

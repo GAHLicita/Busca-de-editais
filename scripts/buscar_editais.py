@@ -586,7 +586,10 @@ def main() -> int:
     if falha_total:
         assunto = f"Editais {hoje:%d/%m/%Y}: FALHA ao consultar o PNCP"
 
-    if not args.sem_email:
+    tem_novidade = bool(alta or media)
+    if not tem_novidade and not falha_total:
+        print("Nenhum edital novo com proposta aberta — e-mail não enviado.")
+    elif not args.sem_email:
         try:
             enviar_email(assunto, htm, md)
         except Exception as erro:  # noqa: BLE001
@@ -596,7 +599,8 @@ def main() -> int:
         vistos.setdefault(e.id, hoje.strftime("%Y-%m-%d"))
     salvar_vistos(vistos, hoje)
 
-    escrever_saida_github(assunto=assunto, quantidade=len(editais))
+    escrever_saida_github(assunto=assunto, quantidade=len(alta) + len(media),
+                          publicar="true" if tem_novidade or falha_total else "false")
     print(assunto)
     # Falha total na consulta: sinaliza erro para o GitHub avisar.
     return 1 if falha_total else 0
