@@ -21,8 +21,11 @@ edicao de video
 edicao de videos
 edicao de imagens
 correio eletronico
-e-mail
-email
+servico de e-mail
+servicos de e-mail
+contas de e-mail
+e-mail corporativo
+email corporativo
 pacote office
 suite de escritorio
 armazenamento em nuvem

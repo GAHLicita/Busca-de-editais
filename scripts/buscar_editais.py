@@ -525,8 +525,9 @@ def main() -> int:
     ap.add_argument("--abertos", action="store_true",
                     help="buscar todos os editais com prazo de proposta ainda aberto, "
                          "independentemente da data de publicação (inclui já informados)")
-    ap.add_argument("--minutos", type=float, default=40,
-                    help="tempo máximo de consulta ao PNCP, em minutos (padrão: 40)")
+    ap.add_argument("--minutos", type=float,
+                    help="tempo máximo de consulta ao PNCP, em minutos "
+                         "(padrão: 40; 100 com --abertos)")
     args = ap.parse_args()
 
     conf = json.loads((CONFIG / "configuracoes.json").read_text(encoding="utf-8"))
@@ -544,7 +545,8 @@ def main() -> int:
 
     vistos = carregar_vistos()
     encontrados: dict[str, Edital] = {}
-    prazo = time.monotonic() + args.minutos * 60
+    minutos = args.minutos or (100 if args.abertos else 40)
+    prazo = time.monotonic() + minutos * 60
     por_modalidade, erros = buscar_todas(conf["modalidades"], datas, prazo)
     total = 0
     for codigo, itens in por_modalidade.items():
