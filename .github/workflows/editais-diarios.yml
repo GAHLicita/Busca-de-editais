@@ -20,6 +20,10 @@ on:
         description: "Quantos dias para trás consultar (padrão: 2)"
         required: false
         default: ""
+      automatico:
+        description: "Uso interno: disparo automático diário (pula se a busca de hoje já rodou)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -43,7 +47,8 @@ jobs:
         id: hoje
         run: |
           arquivo="relatorios/$(TZ=America/Sao_Paulo date +%Y-%m-%d).md"
-          if [ "${{ github.event_name }}" = "schedule" ] && [ -f "$arquivo" ]; then
+          automatico="${{ github.event_name == 'schedule' || github.event.inputs.automatico == 'true' }}"
+          if [ "$automatico" = "true" ] && [ -f "$arquivo" ]; then
             echo "Busca de hoje já feita ($arquivo); horário reserva não precisa rodar."
             echo "pular=true" >> "$GITHUB_OUTPUT"
           fi
