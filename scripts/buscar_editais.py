@@ -591,8 +591,12 @@ def main() -> int:
 
     tem_novidade = bool(alta or media)
     if not tem_novidade and not falha_total:
-        print("Nenhum edital novo com proposta aberta — e-mail não enviado.")
-    elif not args.sem_email:
+        # E-mail enviado mesmo assim, para confirmar que a busca rodou.
+        assunto = (f"Editais {hoje:%d/%m/%Y}: nenhum edital novo hoje "
+                   f"(busca concluída, {total} contratações analisadas)")
+    if erros and not falha_total:
+        assunto += " — ATENÇÃO: busca incompleta"
+    if not args.sem_email:
         try:
             enviar_email(assunto, htm, md)
         except Exception as erro:  # noqa: BLE001

@@ -21,9 +21,10 @@ ChatGPT, Claude, Gemini, Perplexity, Google Workspace, Zoom, Microsoft 365 etc.
    relatório chega direto na sua caixa de entrada.
 3. **Histórico:** todos os relatórios ficam salvos na pasta [`relatorios/`](relatorios/).
 
-Nos dias sem nenhum edital novo com proposta aberta, **nenhum e-mail é enviado**
-(o relatório do dia fica só na pasta `relatorios/`). Se a consulta ao PNCP falhar,
-chega um e-mail avisando da falha.
+O e-mail chega **todos os dias**. Nos dias sem edital novo com proposta aberta,
+o assunto é "nenhum edital novo hoje (busca concluída…)", confirmando que a busca
+rodou. Se a consulta ao PNCP falhar, o assunto avisa a FALHA. Se nenhum e-mail
+chegar até o fim da manhã, a busca não rodou: veja a aba **Actions**.
 
 O GitHub às vezes atrasa ou pula execuções agendadas. Por isso há horários
 reserva (08:17, 10:17 e 13:17 de Brasília), que só rodam se a busca do dia ainda
