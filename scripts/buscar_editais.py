@@ -565,7 +565,17 @@ def main() -> int:
             encontrados[edital.id] = edital
     falha_total = bool(erros) and total == 0
 
-    editais = ordenar(list(encontrados.values()))
+    # O mesmo edital às vezes é publicado duas vezes no PNCP (números de controle
+    # diferentes, mesmo órgão, objeto e prazo): mostra só um, mas registra ambos.
+    unicos: dict[tuple, Edital] = {}
+    duplicados: list[Edital] = []
+    for e in encontrados.values():
+        chave = (e.link_pncp.rsplit("/", 2)[0], normalizar(e.objeto), e.encerramento)
+        if chave in unicos:
+            duplicados.append(e)
+        else:
+            unicos[chave] = e
+    editais = ordenar(list(unicos.values()))
     md = relatorio_markdown(editais, hoje, periodo, erros, total)
     htm = relatorio_html(editais, hoje, periodo, erros, total)
 
@@ -605,7 +615,7 @@ def main() -> int:
         except Exception as erro:  # noqa: BLE001
             print(f"[ERRO] envio de e-mail: {erro}", file=sys.stderr)
 
-    for e in editais:
+    for e in editais + duplicados:
         vistos.setdefault(e.id, hoje.strftime("%Y-%m-%d"))
     salvar_vistos(vistos, hoje)
 
