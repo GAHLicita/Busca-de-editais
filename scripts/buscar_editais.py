@@ -572,7 +572,10 @@ def main() -> int:
     RELATORIOS.mkdir(exist_ok=True)
     # O levantamento de editais em aberto tem nome próprio para não sobrescrever o
     # relatório diário (cuja existência indica que a busca do dia já rodou).
-    nome_relatorio = f"{hoje:%Y-%m-%d}{'-abertos' if args.abertos else ''}.md"
+    # Em falha total o relatório não recebe o nome do dia: assim os horários
+    # reserva não consideram a busca de hoje como feita e tentam de novo.
+    sufixo = "-abertos" if args.abertos else ("-falha" if falha_total else "")
+    nome_relatorio = f"{hoje:%Y-%m-%d}{sufixo}.md"
     (RELATORIOS / nome_relatorio).write_text(md, encoding="utf-8")
     corpo_issue = md if len(md) <= LIMITE_CORPO_ISSUE else (
         md[:LIMITE_CORPO_ISSUE] + f"\n\n… relatório truncado. Veja o arquivo completo em "
