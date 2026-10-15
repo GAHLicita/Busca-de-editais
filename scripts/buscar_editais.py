@@ -477,26 +477,35 @@ def enviar_email(assunto: str, corpo_html: str, corpo_texto: str) -> bool:
     msg.attach(MIMEText(corpo_texto, "plain", "utf-8"))
     msg.attach(MIMEText(corpo_html, "html", "utf-8"))
     # O Gmail às vezes derruba a conexão (ex.: "Connection unexpectedly closed"):
-    # tenta algumas vezes antes de desistir.
+    # tenta algumas vezes, alternando entre SSL (465) e STARTTLS (587).
+    portas = [porta, 587 if porta == 465 else 465]
     tentativas = 4
     for tentativa in range(1, tentativas + 1):
+        porta_atual = portas[(tentativa - 1) % 2]
+        etapa = "conexão"
         try:
-            if porta == 465:
-                with smtplib.SMTP_SSL(host, porta, timeout=60) as smtp:
-                    smtp.login(usuario, senha)
-                    smtp.sendmail(usuario, destinatarios, msg.as_string())
+            if porta_atual == 465:
+                smtp = smtplib.SMTP_SSL(host, porta_atual, timeout=60)
             else:
-                with smtplib.SMTP(host, porta, timeout=60) as smtp:
+                smtp = smtplib.SMTP(host, porta_atual, timeout=60)
+            with smtp:
+                if porta_atual != 465:
+                    etapa = "starttls"
                     smtp.starttls()
-                    smtp.login(usuario, senha)
-                    smtp.sendmail(usuario, destinatarios, msg.as_string())
+                etapa = "login"
+                smtp.login(usuario, senha)
+                etapa = "envio"
+                smtp.sendmail(usuario, destinatarios, msg.as_string())
             break
-        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError,
-                smtplib.SMTPDataError, OSError) as erro:
+        except smtplib.SMTPAuthenticationError as erro:
+            raise RuntimeError(
+                "o Gmail recusou o usuário/senha de app (SMTP_USUARIO/SMTP_SENHA): "
+                f"{erro}") from erro
+        except (smtplib.SMTPException, OSError) as erro:
+            print(f"  envio de e-mail falhou na etapa '{etapa}' (porta {porta_atual}): "
+                  f"{type(erro).__name__}: {erro}", flush=True)
             if tentativa == tentativas:
                 raise
-            print(f"  envio de e-mail falhou ({erro}); nova tentativa em {30 * tentativa}s",
-                  flush=True)
             time.sleep(30 * tentativa)
     print(f"E-mail enviado para {msg['To']}.")
     return True
@@ -542,7 +551,6 @@ def reenviar(data: str) -> int:
     except Exception as erro:  # noqa: BLE001
         print(f"[ERRO] envio de e-mail: {erro}", file=sys.stderr)
         escrever_saida_github(email_falhou="true")
-        return 1
     return 0
 
 
