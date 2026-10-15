@@ -476,17 +476,74 @@ def enviar_email(assunto: str, corpo_html: str, corpo_texto: str) -> bool:
     msg["To"] = ", ".join(destinatarios)
     msg.attach(MIMEText(corpo_texto, "plain", "utf-8"))
     msg.attach(MIMEText(corpo_html, "html", "utf-8"))
-    if porta == 465:
-        with smtplib.SMTP_SSL(host, porta, timeout=60) as smtp:
-            smtp.login(usuario, senha)
-            smtp.sendmail(usuario, destinatarios, msg.as_string())
-    else:
-        with smtplib.SMTP(host, porta, timeout=60) as smtp:
-            smtp.starttls()
-            smtp.login(usuario, senha)
-            smtp.sendmail(usuario, destinatarios, msg.as_string())
+    # O Gmail às vezes derruba a conexão (ex.: "Connection unexpectedly closed"):
+    # tenta algumas vezes antes de desistir.
+    tentativas = 4
+    for tentativa in range(1, tentativas + 1):
+        try:
+            if porta == 465:
+                with smtplib.SMTP_SSL(host, porta, timeout=60) as smtp:
+                    smtp.login(usuario, senha)
+                    smtp.sendmail(usuario, destinatarios, msg.as_string())
+            else:
+                with smtplib.SMTP(host, porta, timeout=60) as smtp:
+                    smtp.starttls()
+                    smtp.login(usuario, senha)
+                    smtp.sendmail(usuario, destinatarios, msg.as_string())
+            break
+        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError,
+                smtplib.SMTPDataError, OSError) as erro:
+            if tentativa == tentativas:
+                raise
+            print(f"  envio de e-mail falhou ({erro}); nova tentativa em {30 * tentativa}s",
+                  flush=True)
+            time.sleep(30 * tentativa)
     print(f"E-mail enviado para {msg['To']}.")
     return True
+
+
+def markdown_para_html(md: str) -> str:
+    """Conversão simples do relatório em Markdown para HTML (usada no reenvio)."""
+    linhas = []
+    for linha in md.splitlines():
+        texto = html.escape(linha)
+        texto = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", texto)
+        texto = re.sub(r"`(.+?)`", r"\1", texto)
+        texto = re.sub(r"\[(.+?)\]\((https?://[^)]+)\)", r'<a href="\2">\1</a>', texto)
+        texto = re.sub(r"(?<![\"=>])(https?://\S+)", r'<a href="\1">\1</a>', texto)
+        for nivel in (3, 2, 1):
+            if linha.startswith("#" * nivel + " "):
+                texto = f"<h{nivel + 1}>{texto[nivel + 1:]}</h{nivel + 1}>"
+                break
+        else:
+            if linha.startswith("- "):
+                texto = f"<li>{texto[2:]}</li>"
+            elif linha.startswith("&gt; ") or texto.startswith("&gt; "):
+                texto = f"<p style=\"color:#a05a00\">{texto[5:]}</p>"
+            elif texto.strip():
+                texto = f"<p>{texto}</p>"
+        linhas.append(texto)
+    return ("<html><body style=\"font-family:Arial,Helvetica,sans-serif;color:#222;max-width:820px\">"
+            + "\n".join(linhas) + "</body></html>")
+
+
+def reenviar(data: str) -> int:
+    """Reenvia por e-mail o relatório salvo de uma data (AAAA-MM-DD)."""
+    md_path = RELATORIOS / f"{data}.md"
+    if not md_path.exists():
+        print(f"[ERRO] relatório {md_path.name} não encontrado.", file=sys.stderr)
+        return 1
+    md = md_path.read_text(encoding="utf-8")
+    html_path = RELATORIOS / f"{data}.html"
+    htm = html_path.read_text(encoding="utf-8") if html_path.exists() else markdown_para_html(md)
+    titulo = md.splitlines()[0].lstrip("# ").strip() if md else f"Editais {data}"
+    try:
+        enviar_email(f"{titulo} (reenvio)", htm, md)
+    except Exception as erro:  # noqa: BLE001
+        print(f"[ERRO] envio de e-mail: {erro}", file=sys.stderr)
+        escrever_saida_github(email_falhou="true")
+        return 1
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -525,10 +582,14 @@ def main() -> int:
     ap.add_argument("--abertos", action="store_true",
                     help="buscar todos os editais com prazo de proposta ainda aberto, "
                          "independentemente da data de publicação (inclui já informados)")
+    ap.add_argument("--reenviar", metavar="AAAA-MM-DD",
+                    help="apenas reenviar por e-mail o relatório já salvo dessa data")
     ap.add_argument("--minutos", type=float,
                     help="tempo máximo de consulta ao PNCP, em minutos "
                          "(padrão: 40; 100 com --abertos)")
     args = ap.parse_args()
+    if args.reenviar:
+        return reenviar(args.reenviar)
 
     conf = json.loads((CONFIG / "configuracoes.json").read_text(encoding="utf-8"))
     filtro = Filtro.carregar(conf.get("incluir_prioridade_media", True))
@@ -587,6 +648,7 @@ def main() -> int:
     sufixo = "-abertos" if args.abertos else ("-falha" if falha_total else "")
     nome_relatorio = f"{hoje:%Y-%m-%d}{sufixo}.md"
     (RELATORIOS / nome_relatorio).write_text(md, encoding="utf-8")
+    (RELATORIOS / nome_relatorio.replace(".md", ".html")).write_text(htm, encoding="utf-8")
     corpo_issue = md if len(md) <= LIMITE_CORPO_ISSUE else (
         md[:LIMITE_CORPO_ISSUE] + f"\n\n… relatório truncado. Veja o arquivo completo em "
                                   f"`relatorios/{nome_relatorio}`.\n")
@@ -609,16 +671,19 @@ def main() -> int:
                    f"(busca concluída, {total} contratações analisadas)")
     if erros and not falha_total:
         assunto += " — ATENÇÃO: busca incompleta"
+    email_falhou = False
     if not args.sem_email:
         try:
             enviar_email(assunto, htm, md)
         except Exception as erro:  # noqa: BLE001
             print(f"[ERRO] envio de e-mail: {erro}", file=sys.stderr)
+            email_falhou = True
 
     for e in editais + duplicados:
         vistos.setdefault(e.id, hoje.strftime("%Y-%m-%d"))
     salvar_vistos(vistos, hoje)
 
+    escrever_saida_github(email_falhou="true" if email_falhou else "false")
     escrever_saida_github(assunto=assunto, quantidade=len(alta) + len(media),
                           publicar="true" if tem_novidade or falha_total else "false")
     print(assunto)

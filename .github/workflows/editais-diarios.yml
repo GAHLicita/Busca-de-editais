@@ -20,6 +20,10 @@ on:
         description: "Quantos dias para trás consultar (padrão: 2)"
         required: false
         default: ""
+      reenviar:
+        description: "Só reenviar o e-mail do relatório já salvo desta data (AAAA-MM-DD)"
+        required: false
+        default: ""
       automatico:
         description: "Uso interno: disparo automático diário (pula se a busca de hoje já rodou)"
         type: boolean
@@ -70,7 +74,9 @@ jobs:
           SMTP_SENHA: ${{ secrets.SMTP_SENHA }}
           EMAIL_DESTINO: ${{ secrets.EMAIL_DESTINO }}
         run: |
-          if [ "${{ github.event.inputs.abertos }}" = "true" ]; then
+          if [ -n "${{ github.event.inputs.reenviar }}" ]; then
+            python scripts/buscar_editais.py --reenviar "${{ github.event.inputs.reenviar }}"
+          elif [ "${{ github.event.inputs.abertos }}" = "true" ]; then
             python scripts/buscar_editais.py --abertos
           elif [ -n "${{ github.event.inputs.dias }}" ]; then
             python scripts/buscar_editais.py --dias "${{ github.event.inputs.dias }}"
@@ -105,4 +111,10 @@ jobs:
         if: steps.busca.outcome == 'failure'
         run: |
           echo "::error::A consulta ao PNCP falhou. Veja o log do passo 'Consultar PNCP'."
+          exit 1
+
+      - name: Sinalizar falha no envio do e-mail
+        if: steps.busca.outputs.email_falhou == 'true'
+        run: |
+          echo "::error::A busca rodou, mas o e-mail não pôde ser enviado. O relatório está na aba Issues e na pasta relatorios/."
           exit 1
