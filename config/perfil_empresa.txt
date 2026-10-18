@@ -27,8 +27,13 @@ NÃO PODE FORNECER (ou só com parceria/credenciamento do fabricante):
   Fortinet, soluções de backup/antivírus corporativas;
 - sistemas sob medida, desenvolvimento, implantação, customização, migração de
   dados, hospedagem, fábrica de software;
-- sistemas de gestão pública/escolar/saúde/tributária de um fornecedor
-  específico (normalmente exigem implantação e o próprio fabricante);
+- sistemas de gestão de qualquer área (pública, contábil, tributária, RH/folha,
+  ponto eletrônico, saúde/hospitalar, escolar, frota, previdência, cesta de
+  preços, protocolo, diário oficial, portal/transparência) e soluções de nicho
+  de um fornecedor específico (normalmente exigem implantação e o próprio
+  fabricante);
+- segurança corporativa (antivírus/endpoint, firewall, backup, proxy, CDN/WAF),
+  outsourcing de impressão, monitoramento/rastreamento, call center com operadores;
 - equipamentos (hardware) e cursos/capacitações.
 
 Quando o edital exigir "revenda autorizada", "parceiro oficial", "declaração do

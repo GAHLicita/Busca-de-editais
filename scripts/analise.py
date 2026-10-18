@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import re
 import urllib.request
@@ -21,6 +22,9 @@ API_ARQUIVOS = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{seq
 LIMITE_DOWNLOAD = 15 * 1024 * 1024
 LIMITE_PAGINAS = 60
 LIMITE_LOTE_TRIAGEM = 40
+
+# PDFs com fontes incomuns geram muitos avisos inofensivos do pypdf no log.
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 # Trechos de edital que indicam exigência de fornecedor autorizado pelo fabricante.
 RE_AUTORIZADO = re.compile(
@@ -244,13 +248,23 @@ def triagem(candidatos: list[dict], modelo: str, avisos: list[str]) -> set[str] 
     sistema = (
         "Você faz a triagem de contratações públicas brasileiras para uma empresa. "
         "Perfil da empresa:\n\n" + _perfil() + "\n\n"
-        "Para cada item, marque relevante=true se o objeto for (ou incluir) aquisição, "
-        "assinatura, licença, subscrição ou acesso a uma plataforma, software, ferramenta "
-        "online, SaaS, ferramenta de IA ou automação/robô/IA para WhatsApp que a empresa "
-        "possa, em tese, fornecer — mesmo que o nome do produto não esteja no texto. "
-        "Marque false para hardware, obras, serviços comuns, cursos/eventos, "
-        "desenvolvimento ou sistemas sob medida com implantação, e sistemas de gestão de "
-        "um fornecedor específico. Na dúvida, marque true. Motivo: no máximo 12 palavras."
+        "Para cada item, marque relevante=true SOMENTE se o objeto for (ou incluir) "
+        "licença/assinatura de uma plataforma ou software PRONTO, de prateleira, do tipo que "
+        "se compra no site do fabricante: ferramentas de IA, design/mídia, escritório e "
+        "colaboração (Office, Workspace, videoconferência), armazenamento em nuvem, redes "
+        "sociais/marketing, bancos de imagens, ou automação/robô/chatbot/IA para WhatsApp. "
+        "Também true quando o objeto é genérico ('licenças de software', 'softwares e "
+        "plataformas digitais') e pode incluir esses produtos.\n"
+        "Marque false para: sistemas de gestão de qualquer área (gestão pública, contábil, "
+        "tributária, folha/RH, ponto eletrônico, saúde/hospitalar/PACS, escolar, SUAS, frota, "
+        "previdência, licitações/cesta de preços, protocolo/processos, gestão documental, "
+        "diário oficial, portal/site/transparência, ouvidoria, BI municipal, licenciamento "
+        "ambiental, georreferenciamento); soluções que exigem implantação, migração ou "
+        "operação; segurança corporativa (antivírus/endpoint, firewall, backup, proxy, CDN/WAF, "
+        "Zscaler, Fortinet); Autodesk/Esri/SAP/Oracle/VMware; outsourcing de impressão; "
+        "hardware, monitoramento, rastreamento, videomonitoramento, ponto biométrico; "
+        "serviços de atendimento/call center com operadores; cursos, eventos, obras e "
+        "serviços comuns. Motivo: no máximo 12 palavras."
     )
     relevantes: set[str] = set()
     for i in range(0, len(candidatos), LIMITE_LOTE_TRIAGEM):
@@ -299,8 +313,13 @@ def analisar(edital, modelo: str) -> dict:
         "sob medida/com implantação); se o edital exige fornecedor autorizado/parceiro/"
         "declaração do fabricante (copie o trecho exato em trecho_exigencia, ou deixe vazio); "
         "quais serviços além da licença são exigidos (suporte, treinamento, implantação…); "
-        "e recomende 'disputar' (a empresa consegue fornecer), 'avaliar' (depende de algo a "
-        "confirmar) ou 'descartar' (fora do perfil). Justificativa: no máximo 2 frases. "
+        "e recomende 'disputar' (a empresa consegue fornecer), 'avaliar' (é plataforma pronta "
+        "vendida por assinatura no site do fabricante, mas há algo a confirmar) ou 'descartar' "
+        "(fora do perfil). Seja rigoroso: descarte sistemas de gestão de qualquer área, "
+        "soluções de nicho de um fornecedor específico que exigem implantação, migração, "
+        "hospedagem ou operação, outsourcing, hardware, segurança corporativa e produtos "
+        "vendidos só por revenda autorizada. Na dúvida entre 'avaliar' e 'descartar' para "
+        "sistemas sem nome comercial conhecido, descarte. Justificativa: no máximo 2 frases. "
         "Se o produto não estiver claro, use o objeto e a especificação para deduzi-lo."
     )
     conteudo = (
