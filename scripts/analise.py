@@ -38,6 +38,9 @@ RE_RELEVANTE = re.compile(
     re.IGNORECASE,
 )
 
+# Modelos que aceitam o reenvio automático para outro modelo em caso de recusa.
+MODELOS_COM_FALLBACK = {"claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5"}
+
 PERFIL = Path(__file__).resolve().parent.parent / "config" / "perfil_empresa.txt"
 
 
@@ -175,11 +178,14 @@ def _chamar(cliente, modelo: str, sistema: str, conteudo: str, schema: dict, max
         messages=[{"role": "user", "content": conteudo}],
         output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
     )
-    try:
-        resp = cliente.beta.messages.create(
-            betas=["server-side-fallback-2026-07-01"], fallbacks="default", **params)
-    except anthropic.BadRequestError:
-        # Modelo/plataforma sem suporte a fallback: tenta a chamada simples.
+    resp = None
+    if modelo in MODELOS_COM_FALLBACK:
+        try:
+            resp = cliente.beta.messages.create(
+                betas=["server-side-fallback-2026-07-01"], fallbacks="default", **params)
+        except anthropic.BadRequestError:
+            resp = None  # sem suporte a fallback: tenta a chamada simples
+    if resp is None:
         resp = cliente.messages.create(**params)
     if resp.stop_reason == "refusal":
         raise RuntimeError("a IA recusou a análise")
