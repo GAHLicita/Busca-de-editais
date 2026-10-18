@@ -1,0 +1,29 @@
+# WHATSAPP - o edital entra na seção WhatsApp quando cita "WhatsApp" E pelo
+# menos um destes termos (evita editais que só citam WhatsApp como contato).
+# Um termo por linha. Linhas com # são ignoradas.
+automacao
+automatizado
+automatizada
+automatizacao
+robo
+robos
+chatbot
+chatbots
+bot
+bots
+inteligencia artificial
+ia
+api
+business
+atendimento
+atendimentos
+plataforma
+disparo
+disparos
+envio em massa
+mensagens
+mensageria
+omnichannel
+multicanal
+central de atendimento
+assistente virtual

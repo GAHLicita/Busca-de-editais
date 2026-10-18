@@ -1,0 +1,36 @@
+# PERFIL DA EMPRESA - usado pela análise automática (IA) de cada edital.
+# Pode editar livremente este texto pelo site do GitHub (ícone de lápis).
+
+A empresa NÃO desenvolve software. Ela fornece a órgãos públicos licenças e
+assinaturas de plataformas prontas (não customizáveis), fazendo a intermediação:
+contrata/ativa a plataforma, paga o fabricante, emite a nota fiscal ao órgão e
+presta suporte técnico.
+
+PODE FORNECER: qualquer plataforma/licença/assinatura que possa ser comprada
+diretamente no site do fabricante, no login do próprio órgão (autoatendimento,
+cartão/fatura), por exemplo:
+- IA: ChatGPT (Plus/Team/Business/Enterprise), Claude, Gemini, Perplexity,
+  Adapta, Copilot, Manus, Midjourney, Leonardo, ElevenLabs, HeyGen, Runway,
+  Gamma, Grok, DeepL, Grammarly, Otter e similares;
+- design e mídia: Canva, Adobe Creative Cloud / Acrobat / Stock, CapCut,
+  Magnific, Freepik, Envato, Flickr, Shutterstock, Figma;
+- produtividade e colaboração: Google Workspace, Microsoft 365 / Office 365,
+  Zoom, Notion, Slack, Miro, Dropbox, Trello, Asana, Monday, ClickUp;
+- redes sociais e marketing: MLabs, Hootsuite, RD Station, Mailchimp;
+- automação e robôs de WhatsApp, chatbots e IA para WhatsApp/atendimento,
+  quando a plataforma é vendida por assinatura (ex.: WhatsApp Business API via
+  plataformas SaaS de atendimento).
+
+NÃO PODE FORNECER (ou só com parceria/credenciamento do fabricante):
+- produtos cujo fabricante só vende por revenda/parceiro autorizado, por
+  exemplo Autodesk (AutoCAD, Revit), Esri (ArcGIS), SAP, Oracle, VMware,
+  Fortinet, soluções de backup/antivírus corporativas;
+- sistemas sob medida, desenvolvimento, implantação, customização, migração de
+  dados, hospedagem, fábrica de software;
+- sistemas de gestão pública/escolar/saúde/tributária de um fornecedor
+  específico (normalmente exigem implantação e o próprio fabricante);
+- equipamentos (hardware) e cursos/capacitações.
+
+Quando o edital exigir "revenda autorizada", "parceiro oficial", "declaração do
+fabricante", "carta de solidariedade" ou similar, a empresa precisa avaliar se
+consegue essa autorização antes de disputar.

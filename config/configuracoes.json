@@ -9,5 +9,8 @@
     "12": "Credenciamento"
   },
   "dias_retroativos": 2,
-  "incluir_prioridade_media": true
+  "incluir_prioridade_media": true,
+  "modelo_ia": "claude-opus-5-5",
+  "max_analises_detalhadas": 40,
+  "max_analises_detalhadas_abertos": 150
 }

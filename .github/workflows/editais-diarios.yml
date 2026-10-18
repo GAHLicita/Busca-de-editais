@@ -62,12 +62,17 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Instalar bibliotecas da análise
+        if: steps.hoje.outputs.pular != 'true'
+        run: pip install --quiet anthropic pypdf
+
       - name: Consultar PNCP e gerar relatório
         id: busca
         if: steps.hoje.outputs.pular != 'true'
         continue-on-error: true
         env:
           PYTHONUNBUFFERED: "1"
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORTA: ${{ secrets.SMTP_PORTA }}
           SMTP_USUARIO: ${{ secrets.SMTP_USUARIO }}

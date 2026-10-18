@@ -46,6 +46,34 @@ recuperado no dia seguinte.
    | `SMTP_SENHA`    | a senha de app de 16 letras gerada no passo 1             |
    | `EMAIL_DESTINO` | quem recebe (vários separados por vírgula)                |
 
+## Análise de cada edital (IA)
+
+Além das plataformas da lista, a busca separa **todo edital de plataforma,
+software, licença, assinatura ou acesso a sistema** e **todo edital de
+automação/robô/IA para WhatsApp**. Para cada um, a análise:
+
+1. lê o edital/termo de referência no PNCP;
+2. identifica o produto pedido e o fabricante;
+3. diz se ele pode ser comprado direto no site do fabricante ou só por
+   parceiro/revenda autorizada (ex.: AutoCAD), ou se é sistema sob medida;
+4. procura no edital exigências de **fornecedor autorizado** (revenda autorizada,
+   declaração do fabricante, carta de solidariedade…) e mostra o trecho;
+5. recomenda **disputar**, **avaliar** ou **descartar**.
+
+Os descartados aparecem resumidos no fim do e-mail, para conferência.
+
+A identificação do produto e a recomendação usam a IA Claude (Anthropic) e
+precisam do segredo **`ANTHROPIC_API_KEY`** (crie em <https://console.anthropic.com>,
+em *API Keys*, e cadastre em **Settings → Secrets and variables → Actions**).
+Sem ele, a busca funciona como antes e só faz a procura de termos de
+"fornecedor autorizado" no texto do edital.
+
+O que a empresa pode ou não fornecer fica descrito em
+[`config/perfil_empresa.txt`](config/perfil_empresa.txt), que a IA lê a cada
+análise. Ajuste esse texto quando o portfólio mudar. O modelo e o limite diário
+de análises ficam em [`config/configuracoes.json`](config/configuracoes.json)
+(`modelo_ia`, `max_analises_detalhadas`).
+
 ## Como o filtro funciona
 
 O objeto de cada contratação publicada é comparado com listas de termos (sem
@@ -58,6 +86,8 @@ diferenciar maiúsculas/minúsculas, acentos ou pontuação):
 | [`config/termos_contexto.txt`](config/termos_contexto.txt) | Palavras de licenciamento ("licença", "assinatura", "subscrição"…): uma delas precisa aparecer junto |
 | [`config/termos_exclusao.txt`](config/termos_exclusao.txt) | Descarta falsos positivos (ex.: "lente zoom", cursos e eventos sobre IA) |
 | [`config/termos_exclusao_media.txt`](config/termos_exclusao_media.txt) | Descarta da prioridade média sistemas de gestão, desenvolvimento e customização |
+| [`config/termos_whatsapp.txt`](config/termos_whatsapp.txt) | "WhatsApp" + um destes termos (automação, robô, chatbot, IA…) → **seção WhatsApp** |
+| [`config/termos_candidatos.txt`](config/termos_candidatos.txt) | Software/plataforma/licença em geral → enviado à **análise por IA** |
 
 O relatório traz só editais **com prazo de proposta ainda aberto**. Contratações
 diretas sem disputa (o órgão já escolheu o fornecedor) aparecem numa seção à

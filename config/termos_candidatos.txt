@@ -1,0 +1,30 @@
+# CANDIDATOS À ANÁLISE POR IA - editais com algum destes termos são enviados à
+# análise automática, que decide se é uma plataforma/software que a empresa
+# pode fornecer (só funciona com a chave ANTHROPIC_API_KEY configurada).
+# Um termo por linha. Linhas com # são ignoradas.
+software
+softwares
+licenca
+licencas
+licenciamento
+assinatura
+assinaturas
+subscricao
+subscricoes
+saas
+software como servico
+plataforma
+plataformas
+aplicativo
+aplicativos
+ferramenta digital
+ferramentas digitais
+ferramenta online
+acesso a plataforma
+acesso ao sistema
+cessao de uso
+cessao de direito de uso
+direito de uso
+inteligencia artificial
+chatbot
+banco de imagens

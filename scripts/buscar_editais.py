@@ -82,6 +82,9 @@ CONTEXTO_EXTRA_MARCAS = [
 ]
 
 
+RE_WHATSAPP = re.compile(r"(?<![a-z0-9])(whats ?app|wpp|zap)(?![a-z0-9])")
+
+
 @dataclass
 class Filtro:
     principais: list[tuple[str, re.Pattern]]
@@ -90,6 +93,8 @@ class Filtro:
     contexto_marcas: list[tuple[str, re.Pattern]]
     exclusao: list[tuple[str, re.Pattern]]
     exclusao_media: list[tuple[str, re.Pattern]]
+    whatsapp_contexto: list[tuple[str, re.Pattern]]
+    candidatos: list[tuple[str, re.Pattern]]
     incluir_media: bool = True
 
     @classmethod
@@ -102,6 +107,8 @@ class Filtro:
             compilar(contexto + CONTEXTO_EXTRA_MARCAS),
             compilar(ler_termos("termos_exclusao.txt")),
             compilar(ler_termos("termos_exclusao_media.txt")),
+            compilar(ler_termos("termos_whatsapp.txt")),
+            compilar(ler_termos("termos_candidatos.txt")),
             incluir_media,
         )
 
@@ -109,19 +116,27 @@ class Filtro:
     def _tem(padroes, texto: str) -> bool:
         return any(p.search(texto) for _, p in padroes)
 
-    def avaliar(self, texto: str) -> tuple[str | None, list[str]]:
-        """Retorna (prioridade, termos encontrados). Prioridade None = descartar."""
+    def avaliar(self, texto: str, candidatos: bool = False) -> tuple[str | None, list[str]]:
+        """Retorna (prioridade, termos encontrados). Prioridade None = descartar.
+
+        Com candidatos=True, editais de software/plataforma que não se encaixam nas
+        listas de termos voltam como "CANDIDATO", para a análise por IA decidir."""
         texto = normalizar(texto)
         if self._tem(self.exclusao, texto):
             return None, []
         achados = [t for t, p in self.principais if p.search(texto)]
         if achados and self._tem(self.contexto_marcas, texto):
             return "ALTA", achados
-        if not self.incluir_media or self._tem(self.exclusao_media, texto):
-            return None, []
-        achados = [t for t, p in self.gerais if p.search(texto)]
-        if achados and self._tem(self.contexto, texto):
-            return "MÉDIA", achados
+        if RE_WHATSAPP.search(texto):
+            achados = [t for t, p in self.whatsapp_contexto if p.search(texto)]
+            if achados:
+                return "WHATSAPP", ["whatsapp"] + achados
+        if self.incluir_media and not self._tem(self.exclusao_media, texto):
+            achados = [t for t, p in self.gerais if p.search(texto)]
+            if achados and self._tem(self.contexto, texto):
+                return "MÉDIA", achados
+        if candidatos and self._tem(self.candidatos, texto):
+            return "CANDIDATO", []
         return None, []
 
 
@@ -333,43 +348,103 @@ def encerrado(edital: Edital, agora: datetime) -> bool:
 
 
 def agrupar(editais: list[Edital]):
-    """Separa em (alta com prazo aberto, média com prazo aberto, sem prazo de proposta)."""
+    """Separa em (seções com prazo aberto, contratações diretas, descartados pela análise)."""
     editais = ordenar(editais)
-    com_prazo = [e for e in editais if e.encerramento]
-    return ([e for e in com_prazo if e.prioridade == "ALTA"],
-            [e for e in com_prazo if e.prioridade == "MÉDIA"],
-            [e for e in editais if not e.encerramento])
+    secoes = {chave: [] for chave, _, _ in SECOES}
+    diretas, descartados = [], []
+    for e in editais:
+        if e.extras.get("descartado"):
+            descartados.append(e)
+        elif not e.encerramento:
+            diretas.append(e)
+        elif e.prioridade in secoes:
+            secoes[e.prioridade].append(e)
+    return secoes, diretas, descartados
 
 
-TITULO_ALTA = "🔴 Prioridade alta — plataformas que fornecemos"
-TITULO_MEDIA = "🟡 Prioridade média — licenças de ferramentas da nossa área"
+SECOES = [
+    ("ALTA", "🔴 Prioridade alta — plataformas que já fornecemos", "#c0392b"),
+    ("WHATSAPP", "🟢 WhatsApp — automação, robôs e IA para WhatsApp", "#1e9e57"),
+    ("OUTRAS", "🔵 Outras plataformas e softwares identificados pela análise", "#2e6fd8"),
+    ("MÉDIA", "🟡 Prioridade média — licenças de ferramentas da nossa área", "#d4a017"),
+]
 TITULO_DIRETAS = "⚪ Contratações diretas, sem prazo de proposta (acompanhamento de mercado)"
 EXPLICA_DIRETAS = ("Dispensas/inexigibilidades publicadas sem disputa aberta: normalmente o órgão já "
                    "escolheu o fornecedor. Servem para saber quem compra o quê e a que preço.")
+TITULO_DESCARTADOS = "⚫ Analisados e descartados (fora do perfil)"
+
+ROTULO_AQUISICAO = {
+    "compra_direta_online": "compra direta no site do fabricante",
+    "exige_parceiro_ou_revenda": "só via parceiro/revenda autorizada",
+    "sob_medida_ou_implantacao": "sistema sob medida / com implantação",
+    "indefinido": "não identificado",
+}
+ROTULO_AUTORIZADO = {
+    "sim": "⚠️ EXIGIDO",
+    "nao_mencionado": "não mencionado no edital",
+    "nao_foi_possivel_ler": "não verificado (edital não pôde ser lido)",
+}
+ROTULO_RECOMENDACAO = {"disputar": "✅ DISPUTAR", "avaliar": "🔎 AVALIAR", "descartar": "❌ DESCARTAR"}
 
 
-def resumo(editais, alta, media, diretas, total_analisado) -> str:
+def total_acionavel(secoes) -> int:
+    return sum(len(g) for g in secoes.values())
+
+
+def linhas_analise(e: Edital) -> list[str]:
+    """Linhas (texto simples, com **negrito** markdown) da análise de um edital."""
+    a = e.extras.get("analise")
+    if not a:
+        return []
+    linhas = []
+    if a.get("ia"):
+        produto = a.get("produto") or "não identificado"
+        if a.get("fabricante"):
+            produto += f" ({a['fabricante']})"
+        linhas.append(f"**Análise:** {ROTULO_RECOMENDACAO.get(a.get('recomendacao'), '')} · "
+                      f"Produto: {produto} · Aquisição: "
+                      f"{ROTULO_AQUISICAO.get(a.get('modo_aquisicao'), 'não identificado')}")
+    linhas.append("**Fornecedor autorizado:** "
+                  + ROTULO_AUTORIZADO.get(a.get("exige_fornecedor_autorizado"), "não verificado"))
+    if a.get("trecho_exigencia"):
+        linhas.append(f"**Trecho do edital:** “{a['trecho_exigencia'][:400]}”")
+    if a.get("servicos_exigidos"):
+        linhas.append(f"**Serviços exigidos além da licença:** {a['servicos_exigidos']}")
+    if a.get("justificativa"):
+        linhas.append(f"**Observação:** {a['justificativa']}")
+    return linhas
+
+
+def resumo(secoes, diretas, total_analisado) -> str:
+    partes = [f"{len(g)} {SECOES_CURTO[k]}" for k, g in secoes.items() if g]
     return (f"Contratações analisadas: **{total_analisado}** · Editais novos com proposta aberta: "
-            f"**{len(alta) + len(media)}** ({len(alta)} prioridade alta, {len(media)} prioridade média)"
-            f" · Contratações diretas: **{len(diretas)}**")
+            f"**{total_acionavel(secoes)}**" + (f" ({', '.join(partes)})" if partes else "")
+            + f" · Contratações diretas: **{len(diretas)}**")
 
 
-def relatorio_markdown(editais, hoje, periodo, erros, total_analisado) -> str:
-    alta, media, diretas = agrupar(editais)
+SECOES_CURTO = {"ALTA": "prioridade alta", "WHATSAPP": "WhatsApp", "OUTRAS": "outras plataformas",
+                "MÉDIA": "prioridade média"}
+
+
+def relatorio_markdown(editais, hoje, periodo, erros, total_analisado, notas=()) -> str:
+    secoes, diretas, descartados = agrupar(editais)
     linhas = [
         f"# Novos editais — {hoje:%d/%m/%Y}",
         "",
         f"Consulta no PNCP: **{periodo}**  ",
-        resumo(editais, alta, media, diretas, total_analisado),
+        resumo(secoes, diretas, total_analisado),
         "",
     ]
     if erros:
         linhas += ["> ⚠️ **Atenção:** algumas consultas falharam e o relatório pode estar incompleto:"]
         linhas += [f"> - {erro}" for erro in erros]
         linhas.append("")
-    if not alta and not media:
+    for nota in notas:
+        linhas += [f"> ℹ️ {nota}", ""]
+    if not total_acionavel(secoes):
         linhas += ["Nenhum edital novo com proposta aberta na nossa área foi encontrado hoje.", ""]
-    for titulo, grupo in ((TITULO_ALTA, alta), (TITULO_MEDIA, media)):
+    for chave, titulo, _ in SECOES:
+        grupo = secoes[chave]
         if not grupo:
             continue
         linhas += [f"## {titulo}", ""]
@@ -380,14 +455,20 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado) -> str:
                 "",
                 f"**Objeto:** {e.objeto}",
                 "",
+            ]
+            analise_md = linhas_analise(e)
+            if analise_md:
+                linhas += [f"- {l}" for l in analise_md]
+            linhas += [
                 f"- **Propostas até:** **{fmt_data(e.encerramento)}** (abertura {fmt_data(e.abertura)})",
                 f"- **Modalidade:** {e.modalidade}",
                 f"- **Unidade:** {e.unidade or '—'}",
                 f"- **Valor estimado:** {fmt_valor(e.valor)}",
                 f"- **Publicado em:** {fmt_data(e.publicacao)}",
-                f"- **Termos encontrados:** {', '.join(e.termos)}",
-                f"- **Nº PNCP:** `{e.id}`",
             ]
+            if e.termos:
+                linhas.append(f"- **Termos encontrados:** {', '.join(e.termos)}")
+            linhas.append(f"- **Nº PNCP:** `{e.id}`")
             if e.link_pncp:
                 linhas.append(f"- **Edital no PNCP:** {e.link_pncp}")
             if e.link_origem:
@@ -401,27 +482,46 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado) -> str:
             linhas.append(f"- **{e.orgao}** ({local}) · {e.modalidade} · {fmt_valor(e.valor)} · "
                           f"{e.objeto[:220]}{'…' if len(e.objeto) > 220 else ''}{link}")
         linhas.append("")
+    if descartados:
+        linhas += [f"## {TITULO_DESCARTADOS}", "",
+                   "Editais de software/plataforma que a análise considerou fora do perfil. "
+                   "Confira se algum deveria ter entrado.", ""]
+        for e in descartados[:40]:
+            motivo = e.extras.get("motivo_descarte", "")
+            link = f" — [PNCP]({e.link_pncp})" if e.link_pncp else ""
+            linhas.append(f"- **{e.orgao}** ({e.uf}) · {e.objeto[:160]}{'…' if len(e.objeto) > 160 else ''}"
+                          f" · _{motivo}_{link}")
+        if len(descartados) > 40:
+            linhas.append(f"- … e mais {len(descartados) - 40}.")
+        linhas.append("")
     return "\n".join(linhas).rstrip() + "\n"
 
 
-def relatorio_html(editais, hoje, periodo, erros, total_analisado) -> str:
+def _md_inline_html(texto: str) -> str:
+    texto = html.escape(texto)
+    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", texto)
+
+
+def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=()) -> str:
     esc = html.escape
-    alta, media, diretas = agrupar(editais)
+    secoes, diretas, descartados = agrupar(editais)
+    resumo_html = _md_inline_html(resumo(secoes, diretas, total_analisado))
     partes = [
         "<html><body style=\"font-family:Arial,Helvetica,sans-serif;color:#222;max-width:820px\">",
         f"<h2>Novos editais — {hoje:%d/%m/%Y}</h2>",
-        f"<p>Consulta no PNCP: <b>{esc(periodo)}</b><br>"
-        f"Contratações analisadas: <b>{total_analisado}</b> · Editais novos com proposta aberta: "
-        f"<b>{len(alta) + len(media)}</b> ({len(alta)} prioridade alta, {len(media)} prioridade média)"
-        f" · Contratações diretas: <b>{len(diretas)}</b></p>",
+        f"<p>Consulta no PNCP: <b>{esc(periodo)}</b><br>{resumo_html}</p>",
     ]
     if erros:
         partes.append("<p style=\"background:#fff4e5;padding:8px;border-left:4px solid #f0a020\">"
                       "<b>Atenção:</b> algumas consultas falharam e o relatório pode estar incompleto:<br>"
                       + "<br>".join(esc(e) for e in erros) + "</p>")
-    if not alta and not media:
+    for nota in notas:
+        partes.append(f"<p style=\"background:#eef4ff;padding:8px;border-left:4px solid #2e6fd8;"
+                      f"font-size:13px\">{esc(nota)}</p>")
+    if not total_acionavel(secoes):
         partes.append("<p>Nenhum edital novo com proposta aberta na nossa área foi encontrado hoje.</p>")
-    for titulo, grupo, cor in ((TITULO_ALTA, alta, "#c0392b"), (TITULO_MEDIA, media, "#d4a017")):
+    for chave, titulo, cor in SECOES:
+        grupo = secoes[chave]
         if not grupo:
             continue
         partes.append(f"<h3 style=\"margin-top:28px\">{esc(titulo)}</h3>")
@@ -432,16 +532,24 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado) -> str:
                 links.append(f"<a href=\"{esc(e.link_pncp)}\">Ver no PNCP</a>")
             if e.link_origem:
                 links.append(f"<a href=\"{esc(e.link_origem)}\">Portal de origem (enviar proposta)</a>")
+            analise_html = "".join(
+                f"<div style=\"margin:3px 0\">{_md_inline_html(l)}</div>" for l in linhas_analise(e))
+            if analise_html:
+                analise_html = (f"<div style=\"background:#f6f8fb;padding:6px 10px;margin:6px 0;"
+                                f"font-size:13px\">{analise_html}</div>")
+            termos = (f"<tr><td><b>Termos</b></td><td>{esc(', '.join(e.termos))}</td></tr>"
+                      if e.termos else "")
             partes.append(
                 f"<div style=\"border:1px solid #ddd;border-left:5px solid {cor};padding:10px 14px;margin:14px 0\">"
                 f"<div style=\"font-size:16px;font-weight:bold;margin:4px 0\">{esc(e.orgao)} ({esc(local)})</div>"
                 f"<p style=\"margin:6px 0\"><b>Objeto:</b> {esc(e.objeto)}</p>"
+                f"{analise_html}"
                 f"<table style=\"font-size:14px\">"
                 f"<tr><td><b>Propostas até</b></td><td><b style=\"color:{cor}\">{fmt_data(e.encerramento)}</b></td></tr>"
                 f"<tr><td><b>Modalidade</b></td><td>{esc(e.modalidade)}</td></tr>"
                 f"<tr><td><b>Valor estimado</b></td><td>{esc(fmt_valor(e.valor))}</td></tr>"
                 f"<tr><td><b>Publicado em</b></td><td>{fmt_data(e.publicacao)}</td></tr>"
-                f"<tr><td><b>Termos</b></td><td>{esc(', '.join(e.termos))}</td></tr>"
+                f"{termos}"
                 f"<tr><td><b>Nº PNCP</b></td><td>{esc(e.id)}</td></tr>"
                 f"</table><p style=\"margin:8px 0 0\">{' · '.join(links)}</p></div>"
             )
@@ -454,6 +562,19 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado) -> str:
             objeto = e.objeto[:220] + ("…" if len(e.objeto) > 220 else "")
             partes.append(f"<li><b>{esc(e.orgao)}</b> ({esc(local)}) · {esc(e.modalidade)} · "
                           f"{esc(fmt_valor(e.valor))} · {esc(objeto)}{link}</li>")
+        partes.append("</ul>")
+    if descartados:
+        partes.append(f"<h3 style=\"margin-top:28px;color:#666\">{esc(TITULO_DESCARTADOS)}</h3>"
+                      "<p style=\"font-size:13px;color:#555\">Editais de software/plataforma que a análise "
+                      "considerou fora do perfil. Confira se algum deveria ter entrado.</p>"
+                      "<ul style=\"font-size:12px;color:#555\">")
+        for e in descartados[:40]:
+            link = f" — <a href=\"{esc(e.link_pncp)}\">PNCP</a>" if e.link_pncp else ""
+            objeto = e.objeto[:160] + ("…" if len(e.objeto) > 160 else "")
+            partes.append(f"<li><b>{esc(e.orgao)}</b> ({esc(e.uf)}) · {esc(objeto)} · "
+                          f"<i>{esc(e.extras.get('motivo_descarte', ''))}</i>{link}</li>")
+        if len(descartados) > 40:
+            partes.append(f"<li>… e mais {len(descartados) - 40}.</li>")
         partes.append("</ul>")
     partes.append("<p style=\"font-size:12px;color:#777\">Relatório gerado automaticamente a partir do "
                   "PNCP — Portal Nacional de Contratações Públicas.</p></body></html>")
@@ -581,6 +702,65 @@ def escrever_saida_github(**valores) -> None:
             f.write(f"{chave}={valor}\n")
 
 
+def analisar_editais(editais: list[Edital], conf: dict, usar_ia: bool,
+                     abertos: bool) -> tuple[list[str], bool]:
+    """Triagem por IA dos candidatos e análise detalhada (leitura do edital) dos
+    editais com prazo aberto. Marca descartados/omitidos em extras e devolve
+    (notas para o relatório, se a IA foi de fato usada)."""
+    import analise
+
+    notas: list[str] = []
+    modelo = conf.get("modelo_ia", "claude-opus-5-5")
+    limite = conf.get("max_analises_detalhadas_abertos" if abertos else "max_analises_detalhadas", 40)
+    com_prazo = [e for e in editais if e.encerramento]
+
+    # Candidatos sem prazo (contratações diretas) não entram no relatório.
+    for e in editais:
+        if e.prioridade == "CANDIDATO" and not e.encerramento:
+            e.extras["omitir"] = True
+
+    if usar_ia:
+        triagem = [e for e in com_prazo if e.prioridade in ("CANDIDATO", "MÉDIA")]
+        if triagem:
+            print(f"Triagem por IA de {len(triagem)} edital(is)...", flush=True)
+            relevantes = analise.triagem(
+                [{"id": e.id, "objeto": f"{e.objeto} {e.informacao[:300]}"} for e in triagem],
+                modelo, notas)
+            if relevantes is None:
+                usar_ia = False
+            else:
+                for e in triagem:
+                    if e.id not in relevantes:
+                        e.extras["omitir"] = True  # fora do perfil já na triagem
+    if not usar_ia:
+        for e in editais:
+            if e.prioridade == "CANDIDATO":
+                e.extras["omitir"] = True
+        notas.append("Análise por IA desativada: cadastre o segredo ANTHROPIC_API_KEY no GitHub "
+                     "para identificar outras plataformas e analisar cada edital. Por enquanto "
+                     "a verificação de fornecedor autorizado é feita só por busca de termos.")
+
+    ordem = {"ALTA": 0, "WHATSAPP": 1, "MÉDIA": 2, "CANDIDATO": 3}
+    fila = sorted((e for e in com_prazo if not e.extras.get("omitir")),
+                  key=lambda e: (ordem.get(e.prioridade, 9), e.encerramento))
+    if len(fila) > limite:
+        notas.append(f"{len(fila) - limite} edital(is) sem análise detalhada (limite diário de "
+                     f"{limite}); aparecem sem o bloco de análise.")
+    fila = fila[:limite]
+    if fila:
+        print(f"Analisando {len(fila)} edital(is) em detalhe...", flush=True)
+        analise.analisar_varios(fila, modelo)
+
+    for e in editais:
+        a = e.extras.get("analise") or {}
+        if a.get("ia") and a.get("recomendacao") == "descartar" and e.prioridade != "ALTA":
+            e.extras["descartado"] = True
+            e.extras["motivo_descarte"] = a.get("justificativa", "")
+        elif e.prioridade == "CANDIDATO" or (e.prioridade == "MÉDIA" and a.get("ia")):
+            e.prioridade = "OUTRAS"
+    return notas, usar_ia
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dias", type=int, help="quantos dias para trás consultar")
@@ -614,6 +794,7 @@ def main() -> int:
 
     vistos = carregar_vistos()
     encontrados: dict[str, Edital] = {}
+    usar_ia = bool(os.environ.get("ANTHROPIC_API_KEY"))
     minutos = args.minutos or (100 if args.abertos else 40)
     prazo = time.monotonic() + minutos * 60
     por_modalidade, erros = buscar_todas(conf["modalidades"], datas, prazo)
@@ -623,7 +804,7 @@ def main() -> int:
         print(f"{conf['modalidades'][codigo]}: {len(itens)} contratações publicadas", flush=True)
         for item in itens:
             texto = f"{item.get('objetoCompra') or ''} {item.get('informacaoComplementar') or ''}"
-            prioridade, termos = filtro.avaliar(texto)
+            prioridade, termos = filtro.avaliar(texto, candidatos=usar_ia)
             if not prioridade:
                 continue
             edital = extrair(item, prioridade, termos)
@@ -645,8 +826,11 @@ def main() -> int:
         else:
             unicos[chave] = e
     editais = ordenar(list(unicos.values()))
-    md = relatorio_markdown(editais, hoje, periodo, erros, total)
-    htm = relatorio_html(editais, hoje, periodo, erros, total)
+    notas, usar_ia = analisar_editais(editais, conf, usar_ia, args.abertos)
+    analisados_omitidos = [e for e in editais if e.extras.get("omitir")]
+    editais = [e for e in editais if not e.extras.get("omitir")]
+    md = relatorio_markdown(editais, hoje, periodo, erros, total, notas)
+    htm = relatorio_html(editais, hoje, periodo, erros, total, notas)
 
     RELATORIOS.mkdir(exist_ok=True)
     # O levantamento de editais em aberto tem nome próprio para não sobrescrever o
@@ -663,16 +847,18 @@ def main() -> int:
     (DADOS / "corpo_issue.md").parent.mkdir(exist_ok=True)
     (DADOS / "corpo_issue.md").write_text(corpo_issue, encoding="utf-8")
 
-    alta, media, _ = agrupar(editais)
-    assunto = (f"Editais {hoje:%d/%m/%Y}: {len(alta) + len(media)} novo(s) com proposta aberta "
-               f"({len(alta)} prioridade alta)")
+    secoes, _, _ = agrupar(editais)
+    n_abertos = total_acionavel(secoes)
+    detalhe = ", ".join(f"{len(g)} {SECOES_CURTO[k]}" for k, g in secoes.items() if g)
+    assunto = (f"Editais {hoje:%d/%m/%Y}: {n_abertos} novo(s) com proposta aberta"
+               + (f" ({detalhe})" if detalhe else ""))
     if args.abertos:
-        assunto = (f"Editais em aberto {hoje:%d/%m/%Y}: {len(alta) + len(media)} com proposta aberta "
-                   f"({len(alta)} prioridade alta)")
+        assunto = (f"Editais em aberto {hoje:%d/%m/%Y}: {n_abertos} com proposta aberta"
+                   + (f" ({detalhe})" if detalhe else ""))
     if falha_total:
         assunto = f"Editais {hoje:%d/%m/%Y}: FALHA ao consultar o PNCP"
 
-    tem_novidade = bool(alta or media)
+    tem_novidade = n_abertos > 0
     if not tem_novidade and not falha_total:
         # E-mail enviado mesmo assim, para confirmar que a busca rodou.
         assunto = (f"Editais {hoje:%d/%m/%Y}: nenhum edital novo hoje "
@@ -687,12 +873,15 @@ def main() -> int:
             print(f"[ERRO] envio de e-mail: {erro}", file=sys.stderr)
             email_falhou = True
 
-    for e in editais + duplicados:
+    # Candidatos descartados na triagem também ficam registrados (não são
+    # reanalisados amanhã); os sem análise por falta de IA não.
+    triados = [e for e in analisados_omitidos if usar_ia and e.encerramento]
+    for e in editais + duplicados + triados:
         vistos.setdefault(e.id, hoje.strftime("%Y-%m-%d"))
     salvar_vistos(vistos, hoje)
 
     escrever_saida_github(email_falhou="true" if email_falhou else "false")
-    escrever_saida_github(assunto=assunto, quantidade=len(alta) + len(media),
+    escrever_saida_github(assunto=assunto, quantidade=n_abertos,
                           publicar="true" if tem_novidade or falha_total else "false")
     print(assunto)
     # Falha total na consulta: sinaliza erro para o GitHub avisar.
