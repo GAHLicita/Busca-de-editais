@@ -76,7 +76,9 @@ O que a empresa pode ou não fornecer fica descrito em
 [`config/perfil_empresa.txt`](config/perfil_empresa.txt), que a IA lê a cada
 análise. Ajuste esse texto quando o portfólio mudar. O modelo e o limite diário
 de análises ficam em [`config/configuracoes.json`](config/configuracoes.json)
-(`modelo_ia`, `max_analises_detalhadas`).
+(`modelo_ia`, `max_analises_detalhadas`). O limite (500 por dia) é só uma trava de
+segurança contra gasto inesperado: na prática todos os editais do dia são analisados
+(costumam ser de 10 a 40).
 
 ## Como o filtro funciona
 

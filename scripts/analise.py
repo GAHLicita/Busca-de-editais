@@ -375,7 +375,7 @@ def analisar(edital, modelo: str) -> dict:
     return resultado
 
 
-def analisar_varios(editais: list, modelo: str, trabalhadores: int = 4) -> None:
+def analisar_varios(editais: list, modelo: str, trabalhadores: int = 6) -> None:
     """Analisa em paralelo e guarda o resultado em edital.extras['analise']."""
     with ThreadPoolExecutor(max_workers=trabalhadores) as pool:
         for edital, res in zip(editais, pool.map(lambda e: analisar(e, modelo), editais)):
