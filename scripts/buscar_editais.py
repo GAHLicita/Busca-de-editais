@@ -409,6 +409,26 @@ ROTULO_AUTORIZADO = {
 ROTULO_RECOMENDACAO = {"disputar": "✅ DISPUTAR", "avaliar": "🔎 AVALIAR", "descartar": "❌ DESCARTAR"}
 
 
+FONTES = "PNCP, Sebrae (Canal do Fornecedor) e diários oficiais municipais (Querido Diário)"
+TITULO_AVISOS = "📰 Avisos em diários oficiais municipais (Querido Diário)"
+EXPLICA_AVISOS = ("Trechos de diários oficiais de prefeituras que citam plataformas da nossa área em "
+                  "avisos de licitação. Podem ser editais ainda não publicados no PNCP: confira prazo e "
+                  "valor no diário.")
+
+
+def nome_fonte(e: Edital) -> str:
+    return "Sebrae" if e.extras.get("fonte") == "sebrae" else "PNCP"
+
+
+def link_edital(e: Edital) -> tuple[str, str]:
+    """(rótulo, endereço) do edital na fonte de origem."""
+    if e.link_pncp:
+        return "PNCP", e.link_pncp
+    if e.link_origem:
+        return nome_fonte(e), e.link_origem
+    return "", ""
+
+
 def total_acionavel(secoes) -> int:
     return sum(len(g) for g in secoes.values())
 
@@ -448,12 +468,12 @@ SECOES_CURTO = {"ALTA": "prioridade alta", "WHATSAPP": "WhatsApp", "OUTRAS": "ou
                 "MÉDIA": "prioridade média"}
 
 
-def relatorio_markdown(editais, hoje, periodo, erros, total_analisado, notas=()) -> str:
+def relatorio_markdown(editais, hoje, periodo, erros, total_analisado, notas=(), avisos=()) -> str:
     secoes, diretas, descartados = agrupar(editais)
     linhas = [
         f"# Novos editais — {hoje:%d/%m/%Y}",
         "",
-        f"Consulta no PNCP: **{periodo}**  ",
+        f"Consulta: **{periodo}** · Fontes: {FONTES}  ",
         resumo(secoes, diretas, total_analisado),
         "",
     ]
@@ -463,7 +483,7 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado, notas=())
         linhas.append("")
     for nota in notas:
         linhas += [f"> ℹ️ {nota}", ""]
-    if not total_acionavel(secoes):
+    if not total_acionavel(secoes) and not avisos:
         linhas += ["Nenhum edital novo com proposta aberta na nossa área foi encontrado hoje.", ""]
     for chave, titulo, _ in SECOES:
         grupo = secoes[chave]
@@ -491,17 +511,23 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado, notas=())
             ]
             if e.termos:
                 linhas.append(f"- **Termos encontrados:** {', '.join(e.termos)}")
-            linhas.append(f"- **Nº PNCP:** `{e.id}`")
-            if e.link_pncp:
-                linhas.append(f"- **Edital no PNCP:** {e.link_pncp}")
-            if e.link_origem:
-                linhas.append(f"- **Portal de origem (onde se envia a proposta):** {e.link_origem}")
+            if e.extras.get("fonte") == "sebrae":
+                linhas += ["- **Fonte:** Sebrae (Canal do Fornecedor)",
+                           f"- **Edital no portal do Sebrae:** {e.link_origem}",
+                           f"- **Local da disputa:** {e.extras.get('local_disputa') or '—'}"]
+            else:
+                linhas.append(f"- **Nº PNCP:** `{e.id}`")
+                if e.link_pncp:
+                    linhas.append(f"- **Edital no PNCP:** {e.link_pncp}")
+                if e.link_origem:
+                    linhas.append(f"- **Portal de origem (onde se envia a proposta):** {e.link_origem}")
             linhas.append("")
     if diretas:
         linhas += [f"## {TITULO_DIRETAS}", "", EXPLICA_DIRETAS, ""]
         for e in diretas:
             local = " / ".join(p for p in (e.municipio, e.uf) if p)
-            link = f" — [PNCP]({e.link_pncp})" if e.link_pncp else ""
+            rotulo, url = link_edital(e)
+            link = f" — [{rotulo}]({url})" if url else ""
             linhas.append(f"- **{e.orgao}** ({local}) · {e.modalidade} · {fmt_valor(e.valor)} · "
                           f"{e.objeto[:220]}{'…' if len(e.objeto) > 220 else ''}{link}")
         linhas.append("")
@@ -511,11 +537,18 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado, notas=())
                    "Confira se algum deveria ter entrado.", ""]
         for e in descartados[:40]:
             motivo = e.extras.get("motivo_descarte", "")
-            link = f" — [PNCP]({e.link_pncp})" if e.link_pncp else ""
+            rotulo, url = link_edital(e)
+            link = f" — [{rotulo}]({url})" if url else ""
             linhas.append(f"- **{e.orgao}** ({e.uf}) · {e.objeto[:160]}{'…' if len(e.objeto) > 160 else ''}"
                           f" · _{motivo}_{link}")
         if len(descartados) > 40:
             linhas.append(f"- … e mais {len(descartados) - 40}.")
+        linhas.append("")
+    if avisos:
+        linhas += [f"## {TITULO_AVISOS}", "", EXPLICA_AVISOS, ""]
+        for a in avisos:
+            linhas.append(f"- **{a['municipio']} / {a['uf']}** · diário de {fmt_data(a['data'])[:10]} · "
+                          f"{', '.join(a['termos'])} · “{a['trecho'][:500]}” — [ver diário]({a['url']})")
         linhas.append("")
     return "\n".join(linhas).rstrip() + "\n"
 
@@ -525,14 +558,14 @@ def _md_inline_html(texto: str) -> str:
     return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", texto)
 
 
-def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=()) -> str:
+def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=(), avisos=()) -> str:
     esc = html.escape
     secoes, diretas, descartados = agrupar(editais)
     resumo_html = _md_inline_html(resumo(secoes, diretas, total_analisado))
     partes = [
         "<html><body style=\"font-family:Arial,Helvetica,sans-serif;color:#222;max-width:820px\">",
         f"<h2>Novos editais — {hoje:%d/%m/%Y}</h2>",
-        f"<p>Consulta no PNCP: <b>{esc(periodo)}</b><br>{resumo_html}</p>",
+        f"<p>Consulta: <b>{esc(periodo)}</b> · Fontes: {esc(FONTES)}<br>{resumo_html}</p>",
     ]
     if erros:
         partes.append("<p style=\"background:#fff4e5;padding:8px;border-left:4px solid #f0a020\">"
@@ -541,7 +574,7 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=()) -> 
     for nota in notas:
         partes.append(f"<p style=\"background:#eef4ff;padding:8px;border-left:4px solid #2e6fd8;"
                       f"font-size:13px\">{esc(nota)}</p>")
-    if not total_acionavel(secoes):
+    if not total_acionavel(secoes) and not avisos:
         partes.append("<p>Nenhum edital novo com proposta aberta na nossa área foi encontrado hoje.</p>")
     for chave, titulo, cor in SECOES:
         grupo = secoes[chave]
@@ -553,7 +586,9 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=()) -> 
             links = []
             if e.link_pncp:
                 links.append(f"<a href=\"{esc(e.link_pncp)}\">Ver no PNCP</a>")
-            if e.link_origem:
+            if e.extras.get("fonte") == "sebrae":
+                links.append(f"<a href=\"{esc(e.link_origem)}\">Edital no portal do Sebrae</a>")
+            elif e.link_origem:
                 links.append(f"<a href=\"{esc(e.link_origem)}\">Portal de origem (enviar proposta)</a>")
             analise_html = "".join(
                 f"<div style=\"margin:3px 0\">{_md_inline_html(l)}</div>" for l in linhas_analise(e))
@@ -574,7 +609,10 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=()) -> 
                 f"<tr><td><b>Forma de pagamento</b></td><td>{esc(texto_pagamento(e))}</td></tr>"
                 f"<tr><td><b>Publicado em</b></td><td>{fmt_data(e.publicacao)}</td></tr>"
                 f"{termos}"
-                f"<tr><td><b>Nº PNCP</b></td><td>{esc(e.id)}</td></tr>"
+                + ("<tr><td><b>Fonte</b></td><td>Sebrae (Canal do Fornecedor)</td></tr>"
+                   f"<tr><td><b>Local da disputa</b></td><td>{esc(e.extras.get('local_disputa') or '—')}</td></tr>"
+                   if e.extras.get("fonte") == "sebrae" else
+                   f"<tr><td><b>Nº PNCP</b></td><td>{esc(e.id)}</td></tr>") +
                 f"</table><p style=\"margin:8px 0 0\">{' · '.join(links)}</p></div>"
             )
     if diretas:
@@ -582,7 +620,8 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=()) -> 
                       f"<p style=\"font-size:13px;color:#555\">{esc(EXPLICA_DIRETAS)}</p><ul style=\"font-size:13px\">")
         for e in diretas:
             local = " / ".join(p for p in (e.municipio, e.uf) if p)
-            link = f" — <a href=\"{esc(e.link_pncp)}\">PNCP</a>" if e.link_pncp else ""
+            rotulo, url = link_edital(e)
+            link = f" — <a href=\"{esc(url)}\">{rotulo}</a>" if url else ""
             objeto = e.objeto[:220] + ("…" if len(e.objeto) > 220 else "")
             partes.append(f"<li><b>{esc(e.orgao)}</b> ({esc(local)}) · {esc(e.modalidade)} · "
                           f"{esc(fmt_valor(e.valor))} · {esc(objeto)}{link}</li>")
@@ -593,15 +632,24 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=()) -> 
                       "considerou fora do perfil. Confira se algum deveria ter entrado.</p>"
                       "<ul style=\"font-size:12px;color:#555\">")
         for e in descartados[:40]:
-            link = f" — <a href=\"{esc(e.link_pncp)}\">PNCP</a>" if e.link_pncp else ""
+            rotulo, url = link_edital(e)
+            link = f" — <a href=\"{esc(url)}\">{rotulo}</a>" if url else ""
             objeto = e.objeto[:160] + ("…" if len(e.objeto) > 160 else "")
             partes.append(f"<li><b>{esc(e.orgao)}</b> ({esc(e.uf)}) · {esc(objeto)} · "
                           f"<i>{esc(e.extras.get('motivo_descarte', ''))}</i>{link}</li>")
         if len(descartados) > 40:
             partes.append(f"<li>… e mais {len(descartados) - 40}.</li>")
         partes.append("</ul>")
-    partes.append("<p style=\"font-size:12px;color:#777\">Relatório gerado automaticamente a partir do "
-                  "PNCP — Portal Nacional de Contratações Públicas.</p></body></html>")
+    if avisos:
+        partes.append(f"<h3 style=\"margin-top:28px\">{esc(TITULO_AVISOS)}</h3>"
+                      f"<p style=\"font-size:13px;color:#555\">{esc(EXPLICA_AVISOS)}</p><ul style=\"font-size:13px\">")
+        for a in avisos:
+            partes.append(f"<li><b>{esc(a['municipio'])} / {esc(a['uf'])}</b> · diário de "
+                          f"{fmt_data(a['data'])[:10]} · {esc(', '.join(a['termos']))} · "
+                          f"“{esc(a['trecho'][:500])}” — <a href=\"{esc(a['url'])}\">ver diário</a></li>")
+        partes.append("</ul>")
+    partes.append(f"<p style=\"font-size:12px;color:#777\">Relatório gerado automaticamente. "
+                  f"Fontes: {esc(FONTES)}.</p></body></html>")
     return "\n".join(partes)
 
 
@@ -814,7 +862,7 @@ def main() -> int:
         datas = [ABERTOS]
         periodo = f"todos os editais com proposta aberta em {hoje:%d/%m/%Y}"
         args.incluir_vistos = True
-    print(f"Consultando PNCP: {periodo}...", flush=True)
+    print(f"Consultando: {periodo}...", flush=True)
 
     vistos = carregar_vistos()
     encontrados: dict[str, Edital] = {}
@@ -839,6 +887,36 @@ def main() -> int:
             encontrados[edital.id] = edital
     falha_total = bool(erros) and total == 0
 
+    # Outras fontes. Uma fonte fora do ar só gera aviso no relatório.
+    import fontes
+    falhas_fontes: list[str] = []
+    itens_sebrae, erro = fontes.buscar_sebrae()
+    if erro:
+        falhas_fontes.append(erro)
+    print(f"Sebrae: {len(itens_sebrae)} licitações em andamento", flush=True)
+    total += len(itens_sebrae)
+    for campos in itens_sebrae:
+        prioridade, termos = filtro.avaliar(campos["objeto"], candidatos=usar_ia)
+        if not prioridade:
+            continue
+        edital = Edital(prioridade=prioridade, termos=termos, **campos)
+        if edital.id in vistos and not args.incluir_vistos:
+            continue
+        encontrados[edital.id] = edital
+
+    avisos: list[dict] = []
+    if not args.abertos:
+        itens_qd, erro = fontes.buscar_querido_diario(
+            ler_termos("termos_principais.txt") + ["whatsapp"],
+            inicio.strftime("%Y-%m-%d"), hoje.strftime("%Y-%m-%d"))
+        if erro:
+            falhas_fontes.append(erro)
+        print(f"Querido Diário: {len(itens_qd)} trechos de avisos de licitação", flush=True)
+        for a in itens_qd:
+            prioridade, termos = filtro.avaliar(a["trecho"])
+            if prioridade and a["id"] not in vistos:
+                avisos.append({**a, "termos": termos})
+
     # O mesmo edital às vezes é publicado duas vezes no PNCP (números de controle
     # diferentes, mesmo órgão, objeto e prazo): mostra só um, mas registra ambos.
     unicos: dict[tuple, Edital] = {}
@@ -851,10 +929,11 @@ def main() -> int:
             unicos[chave] = e
     editais = ordenar(list(unicos.values()))
     notas, usar_ia = analisar_editais(editais, conf, usar_ia, args.abertos)
+    notas += [f"Fonte complementar não consultada hoje: {f}" for f in falhas_fontes]
     analisados_omitidos = [e for e in editais if e.extras.get("omitir")]
     editais = [e for e in editais if not e.extras.get("omitir")]
-    md = relatorio_markdown(editais, hoje, periodo, erros, total, notas)
-    htm = relatorio_html(editais, hoje, periodo, erros, total, notas)
+    md = relatorio_markdown(editais, hoje, periodo, erros, total, notas, avisos)
+    htm = relatorio_html(editais, hoje, periodo, erros, total, notas, avisos)
 
     RELATORIOS.mkdir(exist_ok=True)
     # O levantamento de editais em aberto tem nome próprio para não sobrescrever o
@@ -863,6 +942,11 @@ def main() -> int:
     # reserva não consideram a busca de hoje como feita e tentam de novo.
     sufixo = "-abertos" if args.abertos else ("-falha" if falha_total else "")
     nome_relatorio = f"{hoje:%Y-%m-%d}{sufixo}.md"
+    # Busca manual extra no mesmo dia: não sobrescreve o relatório já salvo.
+    n = 2
+    while (RELATORIOS / nome_relatorio).exists() and not args.abertos:
+        nome_relatorio = f"{hoje:%Y-%m-%d}{sufixo}-{n}.md"
+        n += 1
     (RELATORIOS / nome_relatorio).write_text(md, encoding="utf-8")
     (RELATORIOS / nome_relatorio.replace(".md", ".html")).write_text(htm, encoding="utf-8")
     corpo_issue = md if len(md) <= LIMITE_CORPO_ISSUE else (
@@ -876,13 +960,15 @@ def main() -> int:
     detalhe = ", ".join(f"{len(g)} {SECOES_CURTO[k]}" for k, g in secoes.items() if g)
     assunto = (f"Editais {hoje:%d/%m/%Y}: {n_abertos} novo(s) com proposta aberta"
                + (f" ({detalhe})" if detalhe else ""))
+    if avisos:
+        assunto += f" + {len(avisos)} aviso(s) em diários oficiais"
     if args.abertos:
         assunto = (f"Editais em aberto {hoje:%d/%m/%Y}: {n_abertos} com proposta aberta"
                    + (f" ({detalhe})" if detalhe else ""))
     if falha_total:
         assunto = f"Editais {hoje:%d/%m/%Y}: FALHA ao consultar o PNCP"
 
-    tem_novidade = n_abertos > 0
+    tem_novidade = n_abertos > 0 or bool(avisos)
     if not tem_novidade and not falha_total:
         # E-mail enviado mesmo assim, para confirmar que a busca rodou.
         assunto = (f"Editais {hoje:%d/%m/%Y}: nenhum edital novo hoje "
@@ -902,6 +988,8 @@ def main() -> int:
     triados = [e for e in analisados_omitidos if usar_ia and e.encerramento]
     for e in editais + duplicados + triados:
         vistos.setdefault(e.id, hoje.strftime("%Y-%m-%d"))
+    for a in avisos:
+        vistos.setdefault(a["id"], hoje.strftime("%Y-%m-%d"))
     salvar_vistos(vistos, hoje)
 
     escrever_saida_github(email_falhou="true" if email_falhou else "false")

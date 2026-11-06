@@ -146,6 +146,27 @@ def _trechos(regex, texto: str, maximo: int) -> list[str]:
     return trechos
 
 
+def texto_do_sebrae(sebrae_id) -> tuple[str, str]:
+    """Baixa o termo de referência/edital no portal do Sebrae."""
+    import fontes
+    try:
+        arquivos = fontes.arquivos_sebrae(sebrae_id)
+    except Exception as erro:  # noqa: BLE001
+        return "", f"documentos do Sebrae indisponíveis ({erro})"
+    textos, lidos = [], []
+    for nome, dados in arquivos:
+        try:
+            texto = _texto_arquivo(dados)
+        except Exception:  # noqa: BLE001
+            continue
+        if texto.strip():
+            textos.append(texto)
+            lidos.append(nome)
+    if not textos:
+        return "", "edital sem texto legível no portal do Sebrae"
+    return "\n\n".join(textos), "lidos: " + ", ".join(lidos)
+
+
 def trechos_autorizacao(texto: str, maximo: int = 3) -> list[str]:
     return _trechos(RE_AUTORIZADO, texto, maximo)
 
@@ -303,10 +324,13 @@ def triagem(candidatos: list[dict], modelo: str, avisos: list[str]) -> set[str] 
 
 def analisar(edital, modelo: str) -> dict:
     """Análise detalhada de um edital (objeto `Edital`). Sempre retorna um dict."""
-    partes = (edital.link_pncp or "").rstrip("/").split("/")
-    texto, obs = ("", "sem link do PNCP")
-    if len(partes) >= 3:
-        texto, obs = texto_do_edital(partes[-3], partes[-2], partes[-1])
+    if edital.extras.get("fonte") == "sebrae":
+        texto, obs = texto_do_sebrae(edital.extras["sebrae_id"])
+    else:
+        partes = (edital.link_pncp or "").rstrip("/").split("/")
+        texto, obs = ("", "sem link do PNCP")
+        if len(partes) >= 3:
+            texto, obs = texto_do_edital(partes[-3], partes[-2], partes[-1])
     trechos = trechos_autorizacao(texto) if texto else []
     pagamento = trechos_pagamento(texto) if texto else []
     resultado = {

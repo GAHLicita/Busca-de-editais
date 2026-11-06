@@ -11,6 +11,22 @@ ChatGPT, Claude, Gemini, Perplexity, Google Workspace, Zoom, Microsoft 365 etc.
 > Por isso, consultar o PNCP cobre praticamente todos os portais. O relatório traz o
 > link do edital no PNCP **e** o link do portal de origem, onde a proposta é enviada.
 
+### Outras fontes
+
+- **Sebrae** ([Canal do Fornecedor](https://www.scf3.sebrae.com.br/PortalCf/Licitacoes)):
+  o Sebrae segue regulamento próprio e publica pouco no PNCP. A busca lê todas as
+  licitações em andamento do Sebrae Nacional e das unidades estaduais, aplica o mesmo
+  filtro e a mesma análise (o edital e o termo de referência são baixados do portal).
+- **Diários oficiais municipais** ([Querido Diário](https://queridodiario.ok.org.br)):
+  busca nos diários das prefeituras avisos de licitação que citem as plataformas da
+  lista principal ou WhatsApp. Aparecem numa seção própria, com o trecho e o link do
+  diário (sem análise por IA, pois não há edital estruturado).
+- SENAC, SENAI, SESC, SESI e SENAR: os departamentos regionais que fazem pregão
+  eletrônico já publicam no PNCP e entram na busca normal.
+
+Se uma fonte complementar estiver fora do ar, o relatório avisa e a busca segue com
+as demais.
+
 ## Como o relatório chega até você
 
 1. **Issue no GitHub (automático, sem configuração):** cada relatório vira uma
