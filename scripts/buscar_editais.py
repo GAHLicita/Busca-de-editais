@@ -410,10 +410,15 @@ ROTULO_RECOMENDACAO = {"disputar": "✅ DISPUTAR", "avaliar": "🔎 AVALIAR", "d
 
 
 FONTES = "PNCP, Sebrae (Canal do Fornecedor) e diários oficiais municipais (Querido Diário)"
-TITULO_AVISOS = "📰 Avisos em diários oficiais municipais (Querido Diário)"
-EXPLICA_AVISOS = ("Trechos de diários oficiais de prefeituras que citam plataformas da nossa área em "
-                  "avisos de licitação. Podem ser editais ainda não publicados no PNCP: confira prazo e "
-                  "valor no diário.")
+TITULO_AVISOS = "📰 Avisos de licitação em diários oficiais municipais (Querido Diário)"
+EXPLICA_AVISOS = ("Avisos de disputa aberta, publicados no diário oficial de prefeituras, que citam "
+                  "plataformas da nossa área. Podem ainda não estar no PNCP: confira prazo e valor no "
+                  "diário.")
+TITULO_MERCADO_DIARIOS = "📒 Contratações já feitas, publicadas em diários oficiais (acompanhamento de mercado)"
+EXPLICA_MERCADO_DIARIOS = ("Extratos de contrato, atas e resultados que citam plataformas da nossa área: "
+                           "mostram quem compra, de quem e por quanto.")
+SECOES_DIARIOS = [("aviso", TITULO_AVISOS, EXPLICA_AVISOS),
+                  ("mercado", TITULO_MERCADO_DIARIOS, EXPLICA_MERCADO_DIARIOS)]
 
 
 def nome_fonte(e: Edital) -> str:
@@ -483,7 +488,7 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado, notas=(),
         linhas.append("")
     for nota in notas:
         linhas += [f"> ℹ️ {nota}", ""]
-    if not total_acionavel(secoes) and not avisos:
+    if not total_acionavel(secoes) and not any(a.get("tipo") == "aviso" for a in avisos):
         linhas += ["Nenhum edital novo com proposta aberta na nossa área foi encontrado hoje.", ""]
     for chave, titulo, _ in SECOES:
         grupo = secoes[chave]
@@ -544,9 +549,12 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado, notas=(),
         if len(descartados) > 40:
             linhas.append(f"- … e mais {len(descartados) - 40}.")
         linhas.append("")
-    if avisos:
-        linhas += [f"## {TITULO_AVISOS}", "", EXPLICA_AVISOS, ""]
-        for a in avisos:
+    for tipo, titulo, explica in SECOES_DIARIOS:
+        grupo = [a for a in avisos if a.get("tipo", "aviso") == tipo]
+        if not grupo:
+            continue
+        linhas += [f"## {titulo}", "", explica, ""]
+        for a in grupo:
             linhas.append(f"- **{a['municipio']} / {a['uf']}** · diário de {fmt_data(a['data'])[:10]} · "
                           f"{', '.join(a['termos'])} · “{a['trecho'][:500]}” — [ver diário]({a['url']})")
         linhas.append("")
@@ -574,7 +582,7 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=(), avi
     for nota in notas:
         partes.append(f"<p style=\"background:#eef4ff;padding:8px;border-left:4px solid #2e6fd8;"
                       f"font-size:13px\">{esc(nota)}</p>")
-    if not total_acionavel(secoes) and not avisos:
+    if not total_acionavel(secoes) and not any(a.get("tipo") == "aviso" for a in avisos):
         partes.append("<p>Nenhum edital novo com proposta aberta na nossa área foi encontrado hoje.</p>")
     for chave, titulo, cor in SECOES:
         grupo = secoes[chave]
@@ -640,10 +648,13 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=(), avi
         if len(descartados) > 40:
             partes.append(f"<li>… e mais {len(descartados) - 40}.</li>")
         partes.append("</ul>")
-    if avisos:
-        partes.append(f"<h3 style=\"margin-top:28px\">{esc(TITULO_AVISOS)}</h3>"
-                      f"<p style=\"font-size:13px;color:#555\">{esc(EXPLICA_AVISOS)}</p><ul style=\"font-size:13px\">")
-        for a in avisos:
+    for tipo, titulo, explica in SECOES_DIARIOS:
+        grupo = [a for a in avisos if a.get("tipo", "aviso") == tipo]
+        if not grupo:
+            continue
+        partes.append(f"<h3 style=\"margin-top:28px\">{esc(titulo)}</h3>"
+                      f"<p style=\"font-size:13px;color:#555\">{esc(explica)}</p><ul style=\"font-size:13px\">")
+        for a in grupo:
             partes.append(f"<li><b>{esc(a['municipio'])} / {esc(a['uf'])}</b> · diário de "
                           f"{fmt_data(a['data'])[:10]} · {esc(', '.join(a['termos']))} · "
                           f"“{esc(a['trecho'][:500])}” — <a href=\"{esc(a['url'])}\">ver diário</a></li>")
@@ -960,15 +971,16 @@ def main() -> int:
     detalhe = ", ".join(f"{len(g)} {SECOES_CURTO[k]}" for k, g in secoes.items() if g)
     assunto = (f"Editais {hoje:%d/%m/%Y}: {n_abertos} novo(s) com proposta aberta"
                + (f" ({detalhe})" if detalhe else ""))
-    if avisos:
-        assunto += f" + {len(avisos)} aviso(s) em diários oficiais"
+    n_avisos = sum(1 for a in avisos if a.get("tipo") == "aviso")
+    if n_avisos:
+        assunto += f" + {n_avisos} aviso(s) de licitação em diários oficiais"
     if args.abertos:
         assunto = (f"Editais em aberto {hoje:%d/%m/%Y}: {n_abertos} com proposta aberta"
                    + (f" ({detalhe})" if detalhe else ""))
     if falha_total:
         assunto = f"Editais {hoje:%d/%m/%Y}: FALHA ao consultar o PNCP"
 
-    tem_novidade = n_abertos > 0 or bool(avisos)
+    tem_novidade = n_abertos > 0 or n_avisos > 0
     if not tem_novidade and not falha_total:
         # E-mail enviado mesmo assim, para confirmar que a busca rodou.
         assunto = (f"Editais {hoje:%d/%m/%Y}: nenhum edital novo hoje "

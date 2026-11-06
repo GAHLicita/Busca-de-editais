@@ -150,6 +150,32 @@ RE_AVISO_LICITACAO = re.compile(
 )
 
 
+# Leilões citam "WhatsApp" como telefone de contato: não interessam.
+RE_LEILAO = re.compile(r"leil[aã]o|leiloeir", re.IGNORECASE)
+# Linguagem de disputa ainda aberta.
+RE_ABERTO = re.compile(
+    r"aviso de (licita|dispensa|preg|cota|chamamento|credenciamento)|data da sess[aã]o|"
+    r"abertura (da sess|das propostas|do certame)|recebimento das propostas|acolhimento|"
+    r"edital completo|edital (est[aá]|encontra-se) dispon|propostas? (at[eé]|ser[aã]o recebidas)",
+    re.IGNORECASE,
+)
+# Linguagem de contratação já feita (extratos, resultados, fiscais...).
+RE_CONCLUIDO = re.compile(
+    r"extrato|contratad[ao]\b|detentora|resultado|fracassad|desert[ao]|homolog|adjudic|"
+    r"ratific|fiscal d[ao]|designa|termo aditivo|ata de registro de pre[cç]os n",
+    re.IGNORECASE,
+)
+
+
+def classificar_trecho(trecho: str) -> str | None:
+    """'aviso' (disputa aberta), 'mercado' (contratação já feita) ou None (descartar)."""
+    if RE_LEILAO.search(trecho):
+        return None
+    if RE_ABERTO.search(trecho) and not RE_CONCLUIDO.search(trecho):
+        return "aviso"
+    return "mercado"
+
+
 def _querystring(termos: list[str]) -> str:
     """Termos entre aspas unidos por OU (sintaxe 'simple query string')."""
     return " | ".join(f'"{t}"' for t in termos)
@@ -178,7 +204,11 @@ def buscar_querido_diario(termos: list[str], desde: str, ate: str,
                         trecho = re.sub(r"\s+", " ", trecho).strip()
                         if not RE_AVISO_LICITACAO.search(trecho):
                             continue
+                        tipo = classificar_trecho(trecho)
+                        if not tipo:
+                            continue
                         itens.append({
+                            "tipo": tipo,
                             "id": f"qd-{d.get('territory_id')}-{d.get('date')}-{d.get('edition') or ''}-{n}",
                             "municipio": d.get("territory_name") or "",
                             "uf": d.get("state_code") or "",
