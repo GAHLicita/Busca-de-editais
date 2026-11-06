@@ -58,7 +58,11 @@ automação/robô/IA para WhatsApp**. Para cada um, a análise:
    parceiro/revenda autorizada (ex.: AutoCAD), ou se é sistema sob medida;
 4. procura no edital exigências de **fornecedor autorizado** (revenda autorizada,
    declaração do fabricante, carta de solidariedade…) e mostra o trecho;
-5. recomenda **disputar**, **avaliar** ou **descartar**.
+5. identifica a **forma de pagamento** pelo órgão: à vista/valor integral, mensal,
+   outra periodicidade ou conforme demanda (importa para o preço: licença anual paga
+   de uma vez costuma ter desconto em relação à mensal). Aparece junto do prazo e do
+   valor estimado;
+6. recomenda **disputar**, **avaliar** ou **descartar**.
 
 Os descartados aparecem resumidos no fim do e-mail, para conferência.
 

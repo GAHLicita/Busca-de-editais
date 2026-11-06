@@ -379,6 +379,28 @@ ROTULO_AQUISICAO = {
     "sob_medida_ou_implantacao": "sistema sob medida / com implantação",
     "indefinido": "não identificado",
 }
+ROTULO_PAGAMENTO = {
+    "integral_a_vista": "💰 à vista / valor integral",
+    "mensal": "📅 mensal (parcelado)",
+    "parcelado_outro": "parcelado (outra periodicidade)",
+    "por_demanda": "conforme demanda / ativação",
+    "nao_informado": "não informado no edital",
+}
+
+
+def texto_pagamento(e: Edital) -> str:
+    """Forma de pagamento identificada na análise, para mostrar junto do prazo e do valor."""
+    a = e.extras.get("analise")
+    if not a:
+        return "não verificado"
+    if not a.get("ia") and a.get("detalhe_pagamento"):
+        return a["detalhe_pagamento"][:400]
+    texto = ROTULO_PAGAMENTO.get(a.get("forma_pagamento"), "não informado no edital")
+    if a.get("detalhe_pagamento"):
+        texto += f" — {a['detalhe_pagamento'][:300]}"
+    return texto
+
+
 ROTULO_AUTORIZADO = {
     "sim": "⚠️ EXIGIDO",
     "nao_mencionado": "não mencionado no edital",
@@ -464,6 +486,7 @@ def relatorio_markdown(editais, hoje, periodo, erros, total_analisado, notas=())
                 f"- **Modalidade:** {e.modalidade}",
                 f"- **Unidade:** {e.unidade or '—'}",
                 f"- **Valor estimado:** {fmt_valor(e.valor)}",
+                f"- **Forma de pagamento:** {texto_pagamento(e)}",
                 f"- **Publicado em:** {fmt_data(e.publicacao)}",
             ]
             if e.termos:
@@ -548,6 +571,7 @@ def relatorio_html(editais, hoje, periodo, erros, total_analisado, notas=()) -> 
                 f"<tr><td><b>Propostas até</b></td><td><b style=\"color:{cor}\">{fmt_data(e.encerramento)}</b></td></tr>"
                 f"<tr><td><b>Modalidade</b></td><td>{esc(e.modalidade)}</td></tr>"
                 f"<tr><td><b>Valor estimado</b></td><td>{esc(fmt_valor(e.valor))}</td></tr>"
+                f"<tr><td><b>Forma de pagamento</b></td><td>{esc(texto_pagamento(e))}</td></tr>"
                 f"<tr><td><b>Publicado em</b></td><td>{fmt_data(e.publicacao)}</td></tr>"
                 f"{termos}"
                 f"<tr><td><b>Nº PNCP</b></td><td>{esc(e.id)}</td></tr>"

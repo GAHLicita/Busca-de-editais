@@ -36,9 +36,17 @@ RE_AUTORIZADO = re.compile(
     r"|comprova\w*\W+(?:\w+\W+){0,3}?(parceria|v[ií]nculo)\W+(?:\w+\W+){0,3}?fabricante",
     re.IGNORECASE,
 )
+# Cláusulas sobre a forma de pagamento (à vista/integral x mensal/parcelado).
+RE_PAGAMENTO = re.compile(
+    r"pagamento\W+(?:\w+\W+){0,12}?(mensa\w*|mês|parcela\w*|[uú]nic[oa]|integral\w*|"
+    r"anual\w*|antecipad\w*|em at[eé]\s+\d+|ap[oó]s\s+(?:o|a)\s+(?:ateste|atesto|recebimento|"
+    r"emiss[aã]o|entrega|ativa[cç]))"
+    r"|(?:mensal|parcela)\w*\W+(?:\w+\W+){0,6}?pag\w*",
+    re.IGNORECASE,
+)
 RE_RELEVANTE = re.compile(
     r"objeto|especifica[cç]|licen[cç]a|assinatura|subscri[cç]|plataforma|software|"
-    r"whatsapp|usu[aá]rio|fabricante|marca|modelo|vers[aã]o|plano",
+    r"whatsapp|usu[aá]rio|fabricante|marca|modelo|vers[aã]o|plano|pagamento",
     re.IGNORECASE,
 )
 
@@ -126,9 +134,9 @@ def texto_do_edital(cnpj: str, ano, seq) -> tuple[str, str]:
     return "\n\n".join(textos), "lidos: " + ", ".join(lidos)
 
 
-def trechos_autorizacao(texto: str, maximo: int = 3) -> list[str]:
+def _trechos(regex, texto: str, maximo: int) -> list[str]:
     trechos = []
-    for m in RE_AUTORIZADO.finditer(texto):
+    for m in regex.finditer(texto):
         ini, fim = max(0, m.start() - 220), min(len(texto), m.end() + 220)
         trecho = re.sub(r"\s+", " ", texto[ini:fim]).strip()
         if not any(trecho[:80] in t for t in trechos):
@@ -136,6 +144,14 @@ def trechos_autorizacao(texto: str, maximo: int = 3) -> list[str]:
         if len(trechos) >= maximo:
             break
     return trechos
+
+
+def trechos_autorizacao(texto: str, maximo: int = 3) -> list[str]:
+    return _trechos(RE_AUTORIZADO, texto, maximo)
+
+
+def trechos_pagamento(texto: str, maximo: int = 4) -> list[str]:
+    return _trechos(RE_PAGAMENTO, texto, maximo)
 
 
 def resumo_para_ia(texto: str, limite: int = 14_000) -> str:
@@ -230,11 +246,15 @@ SCHEMA_ANALISE = {
             "sim", "nao_mencionado", "nao_foi_possivel_ler"]},
         "trecho_exigencia": {"type": "string"},
         "servicos_exigidos": {"type": "string"},
+        "forma_pagamento": {"type": "string", "enum": [
+            "integral_a_vista", "mensal", "parcelado_outro", "por_demanda", "nao_informado"]},
+        "detalhe_pagamento": {"type": "string"},
         "recomendacao": {"type": "string", "enum": ["disputar", "avaliar", "descartar"]},
         "justificativa": {"type": "string"},
     },
     "required": ["produto", "fabricante", "modo_aquisicao", "exige_fornecedor_autorizado",
-                 "trecho_exigencia", "servicos_exigidos", "recomendacao", "justificativa"],
+                 "trecho_exigencia", "servicos_exigidos", "forma_pagamento",
+                 "detalhe_pagamento", "recomendacao", "justificativa"],
     "additionalProperties": False,
 }
 
@@ -288,6 +308,7 @@ def analisar(edital, modelo: str) -> dict:
     if len(partes) >= 3:
         texto, obs = texto_do_edital(partes[-3], partes[-2], partes[-1])
     trechos = trechos_autorizacao(texto) if texto else []
+    pagamento = trechos_pagamento(texto) if texto else []
     resultado = {
         "produto": "",
         "fabricante": "",
@@ -296,6 +317,9 @@ def analisar(edital, modelo: str) -> dict:
                                         "nao_mencionado" if texto else "nao_foi_possivel_ler"),
         "trecho_exigencia": trechos[0] if trechos else "",
         "servicos_exigidos": "",
+        "forma_pagamento": "nao_informado",
+        # Sem IA, mostra o trecho do edital sobre pagamento para leitura direta.
+        "detalhe_pagamento": f"trecho do edital: “{pagamento[0]}”" if pagamento else "",
         "recomendacao": "avaliar",
         "justificativa": "",
         "leitura": obs,
@@ -313,6 +337,12 @@ def analisar(edital, modelo: str) -> dict:
         "sob medida/com implantação); se o edital exige fornecedor autorizado/parceiro/"
         "declaração do fabricante (copie o trecho exato em trecho_exigencia, ou deixe vazio); "
         "quais serviços além da licença são exigidos (suporte, treinamento, implantação…); "
+        "a forma de pagamento pelo órgão: 'integral_a_vista' (valor total pago de uma vez, "
+        "ex.: licença anual paga após a ativação), 'mensal' (pagamentos mensais durante a "
+        "vigência), 'parcelado_outro' (trimestral, semestral, por etapas…), 'por_demanda' "
+        "(pago conforme as licenças forem solicitadas/ativadas) ou 'nao_informado'; em "
+        "detalhe_pagamento resuma em 1 frase o que o edital diz (periodicidade, prazo após "
+        "a nota fiscal/ateste) e cite o item, ou deixe vazio se não houver; "
         "e recomende 'disputar' (a empresa consegue fornecer), 'avaliar' (é plataforma pronta "
         "vendida por assinatura no site do fabricante, mas há algo a confirmar) ou 'descartar' "
         "(fora do perfil). Seja rigoroso: descarte sistemas de gestão de qualquer área, "
@@ -328,6 +358,7 @@ def analisar(edital, modelo: str) -> dict:
         f"Objeto: {edital.objeto}\n"
         f"Informação complementar: {edital.informacao[:1500]}\n\n"
         f"Trechos encontrados sobre fornecedor autorizado: {json.dumps(trechos, ensure_ascii=False)}\n\n"
+        f"Trechos encontrados sobre pagamento: {json.dumps(pagamento, ensure_ascii=False)}\n\n"
         f"Texto do edital ({obs}):\n{resumo_para_ia(texto) if texto else '(não disponível)'}"
     )
     try:
