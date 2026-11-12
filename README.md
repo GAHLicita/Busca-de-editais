@@ -82,7 +82,7 @@ automação/robô/IA para WhatsApp**. Para cada um, a análise:
 
 Os descartados aparecem resumidos no fim do e-mail, para conferência.
 
-As parcerias oficiais da empresa (hoje OpenAI, Anthropic e Google) ficam em
+As parcerias oficiais da empresa (hoje OpenAI, Anthropic e Google, incluindo Google Cloud) ficam em
 [`config/parceiros.txt`](config/parceiros.txt). Quando o edital exige fornecedor
 autorizado de um desses fabricantes, o e-mail mostra "somos parceiros" no lugar
 do alerta, e a análise não trata a exigência como impedimento. Para incluir uma

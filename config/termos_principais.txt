@@ -12,6 +12,11 @@ anthropic
 gemini
 perplexity
 google workspace
+google cloud
+google cloud platform
+gcp
+bigquery
+vertex ai
 g suite
 gsuite
 zoom

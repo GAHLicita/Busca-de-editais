@@ -39,7 +39,13 @@ NÃO PODE FORNECER (ou só com parceria/credenciamento do fabricante):
 PARCERIAS OFICIAIS (cadastro de parceiro/revenda junto ao fabricante):
 - OpenAI (ChatGPT Plus/Team/Business/Enterprise, API);
 - Anthropic (Claude Pro/Team/Enterprise, API);
-- Google (Google Workspace, Gemini).
+- Google (Google Workspace, Gemini e Google Cloud — GCP: computação, armazenamento,
+  BigQuery, Vertex AI, Looker, créditos/consumo e subscrições).
+Editais de Google Cloud (inclusive "serviços de computação em nuvem" sob
+demanda/créditos que aceitem Google Cloud, ou contratações multinuvem que
+incluam Google) NÃO devem ser descartados por envolverem nuvem/hospedagem:
+recomende 'disputar' ou, se exigirem migração, sustentação ou operação
+gerenciada além do fornecimento, 'avaliar'.
 Para esses fabricantes, a exigência de "revenda autorizada", "parceiro oficial",
 "declaração do fabricante" ou "carta de solidariedade" NÃO impede a disputa: a
 empresa é parceira e pode comprovar. Recomende 'disputar' quando o restante do

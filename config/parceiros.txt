@@ -5,4 +5,4 @@
 # Para incluir uma nova parceria, acrescente uma linha.
 OpenAI: openai, open ai, chatgpt, chat gpt, gpt
 Anthropic: anthropic, claude
-Google: google, gemini, workspace, g suite, gsuite
+Google: google, gemini, workspace, g suite, gsuite, gcp, bigquery, vertex ai, looker
