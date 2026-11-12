@@ -438,6 +438,35 @@ def total_acionavel(secoes) -> int:
     return sum(len(g) for g in secoes.values())
 
 
+def carregar_parceiros() -> list[tuple[str, list[re.Pattern]]]:
+    """config/parceiros.txt -> [(fabricante, padrões dos termos)]."""
+    caminho = CONFIG / "parceiros.txt"
+    if not caminho.exists():
+        return []
+    parceiros = []
+    for linha in caminho.read_text(encoding="utf-8").splitlines():
+        if linha.strip().startswith("#") or ":" not in linha:
+            continue
+        nome, termos = linha.split(":", 1)
+        termos = [normalizar(t) for t in termos.split(",") if normalizar(t)]
+        parceiros.append((nome.strip(), [p for _, p in compilar(termos)]))
+    return parceiros
+
+
+PARCEIROS = carregar_parceiros()
+
+
+def parceiro_do_edital(e: Edital) -> str:
+    """Nome do fabricante parceiro cujo produto o edital pede ('' se nenhum)."""
+    a = e.extras.get("analise") or {}
+    texto = normalizar(" ".join([a.get("produto", ""), a.get("fabricante", ""),
+                                 e.objeto, " ".join(e.termos)]))
+    for nome, padroes in PARCEIROS:
+        if any(p.search(texto) for p in padroes):
+            return nome
+    return ""
+
+
 def linhas_analise(e: Edital) -> list[str]:
     """Linhas (texto simples, com **negrito** markdown) da análise de um edital."""
     a = e.extras.get("analise")
@@ -451,8 +480,11 @@ def linhas_analise(e: Edital) -> list[str]:
         linhas.append(f"**Análise:** {ROTULO_RECOMENDACAO.get(a.get('recomendacao'), '')} · "
                       f"Produto: {produto} · Aquisição: "
                       f"{ROTULO_AQUISICAO.get(a.get('modo_aquisicao'), 'não identificado')}")
-    linhas.append("**Fornecedor autorizado:** "
-                  + ROTULO_AUTORIZADO.get(a.get("exige_fornecedor_autorizado"), "não verificado"))
+    autorizado = ROTULO_AUTORIZADO.get(a.get("exige_fornecedor_autorizado"), "não verificado")
+    parceiro = parceiro_do_edital(e)
+    if a.get("exige_fornecedor_autorizado") == "sim" and parceiro:
+        autorizado = f"exigido — ✅ somos parceiros {parceiro} (separar a comprovação da parceria)"
+    linhas.append("**Fornecedor autorizado:** " + autorizado)
     if a.get("trecho_exigencia"):
         linhas.append(f"**Trecho do edital:** “{a['trecho_exigencia'][:400]}”")
     if a.get("servicos_exigidos"):

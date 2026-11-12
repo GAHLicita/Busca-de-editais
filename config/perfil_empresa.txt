@@ -36,6 +36,15 @@ NÃO PODE FORNECER (ou só com parceria/credenciamento do fabricante):
   outsourcing de impressão, monitoramento/rastreamento, call center com operadores;
 - equipamentos (hardware) e cursos/capacitações.
 
-Quando o edital exigir "revenda autorizada", "parceiro oficial", "declaração do
-fabricante", "carta de solidariedade" ou similar, a empresa precisa avaliar se
-consegue essa autorização antes de disputar.
+PARCERIAS OFICIAIS (cadastro de parceiro/revenda junto ao fabricante):
+- OpenAI (ChatGPT Plus/Team/Business/Enterprise, API);
+- Anthropic (Claude Pro/Team/Enterprise, API);
+- Google (Google Workspace, Gemini).
+Para esses fabricantes, a exigência de "revenda autorizada", "parceiro oficial",
+"declaração do fabricante" ou "carta de solidariedade" NÃO impede a disputa: a
+empresa é parceira e pode comprovar. Recomende 'disputar' quando o restante do
+edital couber no perfil.
+
+Para os demais fabricantes, quando o edital exigir "revenda autorizada",
+"parceiro oficial", "declaração do fabricante", "carta de solidariedade" ou
+similar, a empresa precisa avaliar se consegue essa autorização antes de disputar.

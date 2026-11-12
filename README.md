@@ -82,6 +82,13 @@ automação/robô/IA para WhatsApp**. Para cada um, a análise:
 
 Os descartados aparecem resumidos no fim do e-mail, para conferência.
 
+As parcerias oficiais da empresa (hoje OpenAI, Anthropic e Google) ficam em
+[`config/parceiros.txt`](config/parceiros.txt). Quando o edital exige fornecedor
+autorizado de um desses fabricantes, o e-mail mostra "somos parceiros" no lugar
+do alerta, e a análise não trata a exigência como impedimento. Para incluir uma
+nova parceria, acrescente uma linha nesse arquivo e cite-a em
+`config/perfil_empresa.txt`.
+
 A identificação do produto e a recomendação usam a IA Claude (Anthropic) e
 precisam do segredo **`ANTHROPIC_API_KEY`** (crie em <https://console.anthropic.com>,
 em *API Keys*, e cadastre em **Settings → Secrets and variables → Actions**).

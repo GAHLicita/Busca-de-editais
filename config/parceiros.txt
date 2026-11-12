@@ -1,0 +1,8 @@
+# FABRICANTES COM OS QUAIS A EMPRESA TEM CADASTRO DE PARCEIRO.
+# Formato: Nome do fabricante: termos que identificam o produto (separados por vírgula).
+# Quando o edital exige fornecedor autorizado e o produto é de um destes
+# fabricantes, o relatório mostra "somos parceiros" em vez do alerta.
+# Para incluir uma nova parceria, acrescente uma linha.
+OpenAI: openai, open ai, chatgpt, chat gpt, gpt
+Anthropic: anthropic, claude
+Google: google, gemini, workspace, g suite, gsuite
