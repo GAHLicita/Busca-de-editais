@@ -376,7 +376,10 @@ def analisar(edital, modelo: str) -> dict:
         "soluções de nicho de um fornecedor específico que exigem implantação, migração, "
         "hospedagem ou operação, outsourcing, hardware, segurança corporativa e produtos "
         "vendidos só por revenda autorizada. Na dúvida entre 'avaliar' e 'descartar' para "
-        "sistemas sem nome comercial conhecido, descarte. Justificativa: no máximo 2 frases. "
+        "sistemas de gestão sem nome comercial conhecido, descarte. Mas editais genéricos de "
+        "IA generativa/LLM/assistente de IA, design, colaboração ou WhatsApp que não citam "
+        "marca NÃO são dúvida: a empresa pode ofertar ChatGPT, Claude, Gemini etc.; recomende "
+        "'disputar' e indique em produto quais plataformas atendem. Justificativa: no máximo 2 frases. "
         "Se o produto não estiver claro, use o objeto e a especificação para deduzi-lo."
     )
     conteudo = (
